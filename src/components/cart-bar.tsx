@@ -1,9 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { changeQuantity, clearCart, useCart } from "@/lib/cart-store";
 import { formatCOP } from "@/lib/format";
-import { buildOrderMessage, whatsappLink } from "@/lib/whatsapp";
 
 export function CartBar() {
   const items = useCart();
@@ -41,14 +41,9 @@ export function CartBar() {
                 </li>
               ))}
             </ul>
-            <a
-              href={whatsappLink(buildOrderMessage(items))}
-              target="_blank"
-              rel="noopener"
-              className="mt-4 block rounded-xl bg-[#25D366] py-3 text-center font-bold text-white"
-            >
-              Pedir por WhatsApp · {formatCOP(subtotal)}
-            </a>
+            <Link href="/pedido" className="mt-4 block rounded-xl bg-accent py-3 text-center font-bold text-brand-900">
+              Continuar · {formatCOP(subtotal)}
+            </Link>
             <p className="mt-2 text-center text-xs text-slate-500">El domicilio se cobra según tu zona.</p>
           </div>
         )}
