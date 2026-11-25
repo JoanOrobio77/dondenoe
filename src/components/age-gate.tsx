@@ -30,7 +30,9 @@ export function AgeGate() {
         ) : (
           <>
             <p className="mt-4 text-lg font-semibold text-slate-800">¿Eres mayor de 18 años?</p>
-            <p className="mt-1 text-sm text-slate-500">Al entregar el pedido pediremos tu documento.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Esta respuesta solo oculta el aviso en este celular. Al entregar el pedido pediremos tu documento.
+            </p>
             <div className="mt-6 grid grid-cols-2 gap-3">
               <button
                 onClick={() => setAnswer("minor")}

@@ -1,6 +1,18 @@
+import { Suspense } from "react";
+import { requireAdmin } from "@/lib/auth";
+
 export const metadata = { title: "Capacitación · DondeNoe" };
 
 export default function HelpPage() {
+  return (
+    <Suspense fallback={<p className="text-slate-500">Cargando capacitación...</p>}>
+      <Help />
+    </Suspense>
+  );
+}
+
+async function Help() {
+  await requireAdmin();
   return (
     <div className="mx-auto max-w-2xl space-y-8">
       <div>

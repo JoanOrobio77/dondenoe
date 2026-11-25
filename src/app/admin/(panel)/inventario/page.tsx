@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { NewProductForm, ProductPhotoField } from "@/components/admin-product-form";
 import { requireAdmin } from "@/lib/auth";
 import { formatCOP } from "@/lib/format";
+import type { AdminProductRow } from "@/lib/types";
 import { imageForProduct } from "@/lib/product-images";
 import { registerMovement } from "../../actions";
 
@@ -17,17 +18,17 @@ export default function InventoryPage() {
 
 async function Inventory() {
   const supabase = await requireAdmin();
-  const [{ data: products }, { data: categories }] = await Promise.all([
-    supabase
-      .from("products")
-      .select("id, name, price, cost, stock, min_stock, image_url, active, categories(name)")
-      .order("active", { ascending: false })
-      .order("name")
-      .throwOnError(),
+  const [{ data }, { data: categories }] = await Promise.all([
+    supabase.rpc("admin_list_products").throwOnError(),
     supabase.from("categories").select("id, name, allows_promotion").order("sort_order").throwOnError(),
   ]);
+  const products = (data ?? []) as AdminProductRow[];
+  const categoryName = new Map(categories.map((category) => [category.id, category.name]));
+  const ordered = [...products].sort(
+    (a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, "es"),
+  );
 
-  const low = products.filter((product) => product.active && product.stock <= product.min_stock);
+  const low = ordered.filter((product) => product.active && product.stock <= product.min_stock);
 
   return (
     <div className="space-y-6">
@@ -77,14 +78,14 @@ async function Inventory() {
             </tr>
           </thead>
           <tbody className="divide-y divide-brand-50">
-            {products.map((product) => {
+            {ordered.map((product) => {
               const photo = imageForProduct(product.name, product.image_url);
               return (
                 <tr key={product.id} className={product.active && product.stock <= product.min_stock ? "bg-accent/10" : undefined}>
                   <td className="p-3">
                     <div className="flex items-start gap-3">
                       {photo ? (
-                        <img src={photo} alt="" className="size-14 shrink-0 rounded-xl bg-[#e7ecee] object-contain" />
+                        <img src={photo} alt={product.name} className="size-14 shrink-0 rounded-xl bg-[#e7ecee] object-contain" />
                       ) : (
                         <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-[#e7ecee] text-xs text-slate-500">
                           Sin foto
@@ -97,7 +98,7 @@ async function Inventory() {
                             <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-600">Inactivo</span>
                           )}
                         </p>
-                        <p className="text-xs text-slate-500">{(product.categories as unknown as { name: string })?.name}</p>
+                        <p className="text-xs text-slate-500">{categoryName.get(product.category_id)}</p>
                         <details className="mt-1">
                           <summary className="cursor-pointer text-xs font-semibold text-brand-700">Cambiar foto</summary>
                           <ProductPhotoField productId={product.id} />

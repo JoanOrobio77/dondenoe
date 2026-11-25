@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { requireAdmin } from "@/lib/auth";
+import type { AdminProductRow } from "@/lib/types";
 import { updateProduct } from "../../actions";
 
 export const metadata = { title: "Productos · DondeNoe" };
@@ -17,14 +18,11 @@ export default function ProductsPage() {
 
 async function Products() {
   const supabase = await requireAdmin();
-  const [{ data: products }, { data: categories }] = await Promise.all([
-    supabase
-      .from("products")
-      .select("id, name, description, price, cost, min_stock, active, category_id, categories(name)")
-      .order("name")
-      .throwOnError(),
+  const [{ data }, { data: categories }] = await Promise.all([
+    supabase.rpc("admin_list_products").throwOnError(),
     supabase.from("categories").select("id, name").order("sort_order").throwOnError(),
   ]);
+  const products = (data ?? []) as AdminProductRow[];
 
   return (
     <div className="space-y-6">

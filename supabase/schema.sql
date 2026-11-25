@@ -1,5 +1,6 @@
 -- DondeNoe: esquema completo. Ejecutar una sola vez en Supabase > SQL Editor,
 -- seguido de grants.sql y seed.sql.
+-- Si la base ya existe, no vuelvas a correr este archivo: usa migrations/004_seguridad.sql.
 
 create extension if not exists pgcrypto;
 
@@ -81,6 +82,7 @@ create table orders (
   number serial unique,
   customer_id uuid not null references customers(id),
   zone_id int references delivery_zones(id),
+  customer_name text,
   address text,
   subtotal int not null,
   delivery_fee int not null default 0,
@@ -170,6 +172,52 @@ language sql stable security definer set search_path = public as $$
   select exists (select 1 from admins where user_id = auth.uid());
 $$;
 
+-- El costo y el mínimo no se leen ni se escriben directo: estas funciones
+-- solo responden si quien llama está en admins.
+create function admin_list_products()
+returns table (
+  id uuid,
+  category_id int,
+  name text,
+  description text,
+  price int,
+  cost int,
+  stock int,
+  min_stock int,
+  image_url text,
+  active boolean,
+  created_at timestamptz
+)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then
+    raise exception 'No autorizado';
+  end if;
+  return query
+  select p.id, p.category_id, p.name, p.description, p.price, p.cost, p.stock,
+         p.min_stock, p.image_url, p.active, p.created_at
+  from products p
+  order by p.name;
+end $$;
+
+create function admin_set_product_private(p_id uuid, p_cost int, p_min_stock int)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then
+    raise exception 'No autorizado';
+  end if;
+  if p_id is null or p_cost is null or p_min_stock is null or p_cost < 0 or p_min_stock < 0 then
+    raise exception 'Costo o stock mínimo inválido';
+  end if;
+  update products
+  set cost = p_cost, min_stock = p_min_stock
+  where id = p_id;
+  if not found then
+    raise exception 'Producto no encontrado';
+  end if;
+end $$;
+
 -- ============ Crear pedido (lo llama la tienda pública) ============
 -- Los precios se toman de la base de datos, nunca del navegador.
 -- p_items: [{"type":"product"|"combo","id":"<uuid>","quantity":2}, ...]
@@ -187,20 +235,65 @@ create function create_order(
 ) returns table (order_number int, order_total int)
 language plpgsql security definer set search_path = public as $$
 declare
+  v_name text := btrim(coalesce(p_name, ''));
+  v_phone text := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
+  v_address text := btrim(coalesce(p_address, ''));
+  v_notes text := nullif(btrim(coalesce(p_notes, '')), '');
   v_customer_id uuid;
   v_order_id uuid;
   v_subtotal int;
   v_fee int := 0;
   v_number int;
+  v_short_name text;
+  v_have int;
 begin
   if not coalesce(p_age_confirmed, false) then
     raise exception 'Solo se vende a mayores de 18 años';
   end if;
-  if coalesce(trim(p_name), '') = '' or coalesce(trim(p_phone), '') = '' then
-    raise exception 'Nombre y teléfono son obligatorios';
+  if char_length(v_name) < 1 or char_length(v_name) > 80 then
+    raise exception 'El nombre debe tener entre 1 y 80 caracteres';
   end if;
-  if jsonb_array_length(coalesce(p_items, '[]'::jsonb)) = 0 then
+  if v_phone !~ '^\d{10}$' then
+    raise exception 'El celular debe tener 10 dígitos';
+  end if;
+  if char_length(v_address) < 1 or char_length(v_address) > 200 then
+    raise exception 'La dirección debe tener entre 1 y 200 caracteres';
+  end if;
+  if v_notes is not null and char_length(v_notes) > 300 then
+    raise exception 'Las notas no pueden pasar de 300 caracteres';
+  end if;
+  if jsonb_typeof(coalesce(p_items, 'null'::jsonb)) <> 'array'
+     or jsonb_array_length(p_items) = 0 then
     raise exception 'El pedido está vacío';
+  end if;
+  if jsonb_array_length(p_items) > 30 then
+    raise exception 'El pedido no puede tener más de 30 líneas';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(p_items) i
+    where coalesce(i->>'type', '') not in ('product', 'combo')
+       or coalesce(i->>'id', '') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  ) then
+    raise exception 'Un producto del pedido ya no está disponible';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(p_items) i
+    where coalesce(i->>'quantity', '') !~ '^[0-9]+$'
+       or (i->>'quantity')::int < 1
+       or (i->>'quantity')::int > 50
+  ) then
+    raise exception 'Cada producto debe pedirse entre 1 y 50 unidades';
+  end if;
+
+  if (
+    select count(*)
+    from orders o
+    join customers c on c.id = o.customer_id
+    where c.phone = v_phone and o.status = 'nuevo'
+  ) >= 3 then
+    raise exception 'Ya tienes 3 pedidos sin confirmar. Escríbenos por WhatsApp para seguir';
   end if;
 
   if p_zone_id is not null then
@@ -210,24 +303,82 @@ begin
     end if;
   end if;
 
+  if exists (
+    select 1
+    from jsonb_array_elements(p_items) i
+    where i->>'type' = 'product'
+      and not exists (
+        select 1 from products p
+        where p.id = (i->>'id')::uuid and p.active
+      )
+  ) then
+    raise exception 'Un producto del pedido ya no está disponible';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(p_items) i
+    where i->>'type' = 'combo'
+      and not exists (
+        select 1 from combos c
+        where c.id = (i->>'id')::uuid and c.active
+      )
+  ) then
+    raise exception 'Un combo del pedido ya no está disponible';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(p_items) i
+    join combo_items ci on ci.combo_id = (i->>'id')::uuid
+    left join products p on p.id = ci.product_id and p.active
+    where i->>'type' = 'combo' and p.id is null
+  ) then
+    raise exception 'Un producto del pedido ya no está disponible';
+  end if;
+
+  select p.name, p.stock
+  into v_short_name, v_have
+  from (
+    select product_id, sum(qty) as need
+    from (
+      select (i->>'id')::uuid as product_id, (i->>'quantity')::int as qty
+      from jsonb_array_elements(p_items) i
+      where i->>'type' = 'product'
+      union all
+      select ci.product_id, (i->>'quantity')::int * ci.quantity
+      from jsonb_array_elements(p_items) i
+      join combo_items ci on ci.combo_id = (i->>'id')::uuid
+      where i->>'type' = 'combo'
+    ) lines
+    group by product_id
+  ) demand
+  join products p on p.id = demand.product_id
+  where demand.need > p.stock
+  limit 1;
+
+  if found then
+    raise exception using message = format('No hay suficiente stock de %s (quedan %s)', v_short_name, v_have);
+  end if;
+
   insert into customers (name, phone, address, accepts_marketing)
-  values (trim(p_name), trim(p_phone), p_address, coalesce(p_accepts_marketing, false))
+  values (v_name, v_phone, v_address, coalesce(p_accepts_marketing, false))
   on conflict (phone) do update
-    set name = excluded.name,
-        address = coalesce(excluded.address, customers.address),
-        accepts_marketing = customers.accepts_marketing or excluded.accepts_marketing
+    set accepts_marketing = customers.accepts_marketing or excluded.accepts_marketing
   returning id into v_customer_id;
 
-  insert into orders (customer_id, zone_id, address, subtotal, delivery_fee, total,
-                      payment_method, age_confirmed, notes)
-  values (v_customer_id, p_zone_id, p_address, 0, v_fee, 0, p_payment, true, p_notes)
+  insert into orders (
+    customer_id, customer_name, zone_id, address, subtotal, delivery_fee, total,
+    payment_method, age_confirmed, notes
+  )
+  values (v_customer_id, v_name, p_zone_id, v_address, 0, v_fee, 0, p_payment, true, v_notes)
   returning id, number into v_order_id, v_number;
 
   insert into order_items (order_id, product_id, name, unit_price, unit_cost, quantity)
   select v_order_id, p.id, p.name, p.price, p.cost, (i->>'quantity')::int
   from jsonb_array_elements(p_items) i
   join products p on p.id = (i->>'id')::uuid and p.active
-  where i->>'type' = 'product' and (i->>'quantity')::int > 0;
+  where i->>'type' = 'product';
 
   insert into order_items (order_id, combo_id, name, unit_price, unit_cost, quantity)
   select v_order_id, c.id, c.name, c.price,
@@ -237,7 +388,7 @@ begin
          (i->>'quantity')::int
   from jsonb_array_elements(p_items) i
   join combos c on c.id = (i->>'id')::uuid and c.active
-  where i->>'type' = 'combo' and (i->>'quantity')::int > 0;
+  where i->>'type' = 'combo';
 
   select coalesce(sum(unit_price * quantity), 0) into v_subtotal
   from order_items where order_id = v_order_id;

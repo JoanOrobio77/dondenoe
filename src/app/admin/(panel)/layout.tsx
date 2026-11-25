@@ -1,8 +1,19 @@
+import { Suspense, type ReactNode } from "react";
 import { AdminNav } from "@/components/admin-nav";
 import { Wordmark } from "@/components/wordmark";
+import { requireAdmin } from "@/lib/auth";
 import { signOut } from "../actions";
 
 export default function PanelLayout({ children }: LayoutProps<"/admin">) {
+  return (
+    <Suspense fallback={<p className="px-4 py-6 text-slate-500">Cargando panel...</p>}>
+      <PanelShell>{children}</PanelShell>
+    </Suspense>
+  );
+}
+
+async function PanelShell({ children }: { children: ReactNode }) {
+  await requireAdmin();
   return (
     <>
       <header className="border-b border-black/10 bg-[#fffaf6] px-4 py-5">

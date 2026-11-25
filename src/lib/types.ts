@@ -24,6 +24,20 @@ export type Combo = {
   imageUrl: string | null;
 };
 
+export type AdminProductRow = {
+  id: string;
+  category_id: number;
+  name: string;
+  description: string | null;
+  price: number;
+  cost: number;
+  stock: number;
+  min_stock: number;
+  image_url: string | null;
+  active: boolean;
+  created_at: string;
+};
+
 export type DeliveryZone = {
   id: number;
   name: string;

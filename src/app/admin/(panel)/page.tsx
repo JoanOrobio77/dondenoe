@@ -41,7 +41,7 @@ async function Orders() {
   const { data: orders } = await supabase
     .from("orders")
     .select(
-      "id, number, status, address, subtotal, delivery_fee, total, payment_method, notes, created_at, customers(name, phone), delivery_zones(name), order_items(name, quantity, unit_price)",
+      "id, number, status, customer_name, address, subtotal, delivery_fee, total, payment_method, notes, created_at, customers(name, phone), delivery_zones(name), order_items(name, quantity, unit_price)",
     )
     .order("created_at", { ascending: false })
     .limit(50)
@@ -79,6 +79,7 @@ type OrderRow = {
   id: string;
   number: number;
   status: string;
+  customer_name: string | null;
   address: string | null;
   delivery_fee: number;
   total: number;
@@ -115,7 +116,7 @@ function OrderCard({ order }: { order: OrderRow }) {
       </div>
 
       <div className="mt-3 text-sm">
-        <p className="font-semibold">{customer?.name}</p>
+        <p className="font-semibold">{order.customer_name || customer?.name}</p>
         <a href={`https://wa.me/57${customer?.phone}`} target="_blank" rel="noopener" className="text-brand-700 underline">
           {customer?.phone}
         </a>

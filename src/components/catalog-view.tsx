@@ -30,6 +30,9 @@ export function CatalogView({ catalog }: { catalog: Catalog }) {
                       Ahorras {formatCOP(savings)}
                     </p>
                   )}
+                  {combo.imageUrl && (
+                    <img src={combo.imageUrl} alt={combo.name} className="mb-3 h-24 w-full rounded-xl object-contain" />
+                  )}
                   <h3 className="text-lg font-bold">{combo.name}</h3>
                   <p className="mt-1 flex-1 text-sm text-white/70">{combo.description}</p>
                   <div className="mt-3 flex items-end justify-between gap-2">
@@ -96,7 +99,7 @@ function ProductPhoto({ name, imageUrl }: { name: string; imageUrl: string | nul
   const src = imageForProduct(name, imageUrl);
   if (!src) return null;
   return (
-    <img src={src} alt="" className="size-16 shrink-0 rounded-xl bg-[#e7ecee] object-contain" />
+    <img src={src} alt={name} className="size-16 shrink-0 rounded-xl bg-[#e7ecee] object-contain" />
   );
 }
 

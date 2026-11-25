@@ -88,7 +88,7 @@ export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
         <h2 className="font-bold text-brand-900">¿A dónde lo llevamos?</h2>
         <label className="block text-sm font-semibold text-slate-700">
           Nombre
-          <input name="name" required autoComplete="name" className={inputClass} />
+          <input name="name" required maxLength={80} autoComplete="name" className={inputClass} />
         </label>
         <label className="block text-sm font-semibold text-slate-700">
           Celular
@@ -106,7 +106,7 @@ export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
         </label>
         <label className="block text-sm font-semibold text-slate-700">
           Dirección
-          <input name="address" required autoComplete="street-address" placeholder="Calle, número, barrio, apto" className={inputClass} />
+          <input name="address" required maxLength={200} autoComplete="street-address" placeholder="Calle, número, barrio, apto" className={inputClass} />
         </label>
         <fieldset>
           <legend className="text-sm font-semibold text-slate-700">Forma de pago</legend>
@@ -121,7 +121,7 @@ export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
         </fieldset>
         <label className="block text-sm font-semibold text-slate-700">
           Notas (opcional)
-          <input name="notes" placeholder="Ej: con cambio de $100.000" className={inputClass} />
+          <input name="notes" maxLength={300} placeholder="Ej: con cambio de $100.000" className={inputClass} />
         </label>
       </section>
 

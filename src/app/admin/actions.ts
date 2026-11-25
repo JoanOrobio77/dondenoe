@@ -89,19 +89,24 @@ export async function updateProduct(formData: FormData) {
   const description = formData.get("description");
   if (price === null || cost === null || !name || minStock < 0) throw new Error("Revisa el nombre, el precio y el costo");
 
+  const productId = String(formData.get("productId"));
   await supabase
     .from("products")
     .update({
       name,
       price,
-      cost,
-      min_stock: minStock,
       active: formData.get("active") === "on",
       ...(categoryId ? { category_id: categoryId } : {}),
       ...(description !== null ? { description: String(description).trim() || null } : {}),
     })
-    .eq("id", String(formData.get("productId")))
+    .eq("id", productId)
     .throwOnError();
+  const { error: privateError } = await supabase.rpc("admin_set_product_private", {
+    p_id: productId,
+    p_cost: cost,
+    p_min_stock: minStock,
+  });
+  if (privateError) throw new Error("No se pudo guardar el costo");
   updateTag("catalog");
   refresh();
 }
@@ -198,13 +203,21 @@ export async function createProduct(_prev: string | null | undefined, formData: 
       category_id: input.categoryId,
       description: input.description || null,
       price: input.price,
-      cost: input.cost,
       stock: 0,
-      min_stock: input.minStock,
     })
     .select("id")
     .single();
   if (error || !created) return "No se pudo crear el producto. Entra de nuevo al panel e inténtalo otra vez.";
+
+  const { error: privateError } = await supabase.rpc("admin_set_product_private", {
+    p_id: created.id,
+    p_cost: input.cost,
+    p_min_stock: input.minStock,
+  });
+  if (privateError) {
+    await supabase.from("products").delete().eq("id", created.id);
+    return "No se pudo guardar el costo del producto.";
+  }
 
   const discard = async () => {
     await supabase.storage.from("products").remove([`${created.id}.jpg`, `${created.id}.png`, `${created.id}.webp`]);

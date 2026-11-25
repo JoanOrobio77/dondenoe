@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { AgeGate } from "@/components/age-gate";
 import { CartBar } from "@/components/cart-bar";
 import { CatalogView } from "@/components/catalog-view";
 import { Wordmark } from "@/components/wordmark";
 import { getCatalog, getPromotions } from "@/lib/catalog";
 import { formatCOP } from "@/lib/format";
+import { whatsappLink } from "@/lib/whatsapp";
 
 export default async function Home() {
   const [catalog, promotions] = await Promise.all([getCatalog(), getPromotions()]);
@@ -53,11 +53,22 @@ export default async function Home() {
         <p>Prohíbase el expendio de bebidas embriagantes a menores de edad. Ley 124 de 1994.</p>
         <p className="mt-1">El exceso de alcohol es perjudicial para la salud. Ley 30 de 1986.</p>
         <p className="mt-1">Fumar es perjudicial para la salud. Venta prohibida a menores de 18 años.</p>
-        <p className="mt-3">
-          <Link href="/admin" className="font-semibold text-brand-700 underline">
-            Panel
-          </Link>
-        </p>
+        <p className="mt-3">Horario: todos los días, 11:00 a. m. a 10:00 p. m.</p>
+        {catalog.zones.length > 0 && (
+          <p className="mt-1">
+            Zonas: {catalog.zones.map((zone) => `${zone.name} ${formatCOP(zone.fee)}`).join(" · ")}
+          </p>
+        )}
+        {process.env.NEXT_PUBLIC_WHATSAPP_NUMBER && (
+          <p className="mt-2">
+            <a
+              href={whatsappLink("Hola DondeNoe, quiero hacer un pedido.")}
+              className="font-semibold text-brand-700 underline"
+            >
+              Escribir por WhatsApp
+            </a>
+          </p>
+        )}
       </footer>
 
       <CartBar />
