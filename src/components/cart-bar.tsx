@@ -49,7 +49,7 @@ export function CartBar() {
         )}
         <button
           onClick={() => setOpen(!open)}
-          className="flex w-full items-center justify-between bg-brand-700 px-5 py-4 font-bold text-white"
+          className="flex w-full items-center justify-between bg-black px-5 py-4 font-bold text-white"
         >
           <span>
             {count} {count === 1 ? "producto" : "productos"}

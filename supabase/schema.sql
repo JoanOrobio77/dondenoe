@@ -182,7 +182,8 @@ create function create_order(
   p_payment payment_method,
   p_age_confirmed boolean,
   p_items jsonb,
-  p_notes text default null
+  p_notes text default null,
+  p_accepts_marketing boolean default false
 ) returns table (order_number int, order_total int)
 language plpgsql security definer set search_path = public as $$
 declare
@@ -209,10 +210,12 @@ begin
     end if;
   end if;
 
-  insert into customers (name, phone, address)
-  values (trim(p_name), trim(p_phone), p_address)
+  insert into customers (name, phone, address, accepts_marketing)
+  values (trim(p_name), trim(p_phone), p_address, coalesce(p_accepts_marketing, false))
   on conflict (phone) do update
-    set name = excluded.name, address = coalesce(excluded.address, customers.address)
+    set name = excluded.name,
+        address = coalesce(excluded.address, customers.address),
+        accepts_marketing = customers.accepts_marketing or excluded.accepts_marketing
   returning id into v_customer_id;
 
   insert into orders (customer_id, zone_id, address, subtotal, delivery_fee, total,
@@ -284,3 +287,21 @@ create policy "admin pedidos" on orders for all using (is_admin()) with check (i
 create policy "admin items pedido" on order_items for all using (is_admin()) with check (is_admin());
 create policy "admin inventario" on inventory_movements for all using (is_admin()) with check (is_admin());
 create policy "admin ve admins" on admins for select using (is_admin());
+
+-- Fotos de productos. El panel sube la imagen; la tienda la lee por URL pública.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('products', 'products', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+create policy "fotos de productos públicas" on storage.objects for select
+  to public using (bucket_id = 'products');
+create policy "admin sube fotos de productos" on storage.objects for insert
+  to authenticated with check (bucket_id = 'products' and public.is_admin());
+create policy "admin actualiza fotos de productos" on storage.objects for update
+  to authenticated using (bucket_id = 'products' and public.is_admin())
+  with check (bucket_id = 'products' and public.is_admin());
+create policy "admin borra fotos de productos" on storage.objects for delete
+  to authenticated using (bucket_id = 'products' and public.is_admin());

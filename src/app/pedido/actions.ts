@@ -19,6 +19,7 @@ export async function placeOrder(_prev: PlaceOrderState, formData: FormData): Pr
   const payment = String(formData.get("payment")) as PaymentMethod;
   const notes = String(formData.get("notes") ?? "").trim();
   const ageConfirmed = formData.get("ageConfirmed") === "on";
+  const acceptsMarketing = formData.get("marketing") === "on";
 
   let items: CartItem[];
   try {
@@ -38,19 +39,34 @@ export async function placeOrder(_prev: PlaceOrderState, formData: FormData): Pr
     return { status: "error", message: "La tienda está en modo demo: conecta Supabase para recibir pedidos." };
   }
 
-  const { data, error } = await createPublicClient()
-    .rpc("create_order", {
-      p_name: name,
-      p_phone: phone,
-      p_address: address,
-      p_zone_id: zoneId,
-      p_payment: payment,
-      p_age_confirmed: true,
-      p_items: items.map((i) => ({ type: i.type, id: i.id, quantity: i.quantity })),
-      p_notes: notes || null,
-    })
-    .single<{ order_number: number; order_total: number }>();
+  const payload = {
+    p_name: name,
+    p_phone: phone,
+    p_address: address,
+    p_zone_id: zoneId,
+    p_payment: payment,
+    p_age_confirmed: true,
+    p_items: items.map((i) => ({ type: i.type, id: i.id, quantity: i.quantity })),
+    p_notes: notes || null,
+    p_accepts_marketing: acceptsMarketing,
+  };
+  const supabase = createPublicClient();
+  let { data, error } = await supabase.rpc("create_order", payload).single<{ order_number: number; order_total: number }>();
+  if (error && /schema cache|PGRST202/i.test(error.message)) {
+    ({ data, error } = await supabase
+      .rpc("create_order", {
+        p_name: payload.p_name,
+        p_phone: payload.p_phone,
+        p_address: payload.p_address,
+        p_zone_id: payload.p_zone_id,
+        p_payment: payload.p_payment,
+        p_age_confirmed: payload.p_age_confirmed,
+        p_items: payload.p_items,
+        p_notes: payload.p_notes,
+      })
+      .single<{ order_number: number; order_total: number }>());
+  }
 
-  if (error) return { status: "error", message: error.message };
+  if (error || !data) return { status: "error", message: error?.message ?? "No se pudo registrar el pedido." };
   return { status: "ok", number: data.order_number, total: data.order_total };
 }

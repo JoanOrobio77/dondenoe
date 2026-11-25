@@ -125,6 +125,11 @@ export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
         </label>
       </section>
 
+      <label className="flex items-start gap-3 rounded-2xl bg-white p-4 text-sm text-slate-700 ring-1 ring-black/5">
+        <input type="checkbox" name="marketing" className="mt-0.5 size-5" />
+        <span>Quiero que me avisen por WhatsApp de promociones de fin de semana y quincena.</span>
+      </label>
+
       <label className="flex items-start gap-3 rounded-2xl bg-accent/20 p-4 text-sm text-brand-900">
         <input type="checkbox" name="ageConfirmed" required className="mt-0.5 size-5" />
         <span>

@@ -3,6 +3,34 @@ import { demoCatalog } from "./demo-data";
 import { createPublicClient, isSupabaseConfigured } from "./supabase/public";
 import type { Catalog } from "./types";
 
+export type Promotion = {
+  id: string;
+  title: string;
+  description: string | null;
+  discountPercent: number | null;
+};
+
+export async function getPromotions(): Promise<Promotion[]> {
+  "use cache";
+  cacheLife("minutes");
+  cacheTag("promotions");
+
+  if (!isSupabaseConfigured()) return [];
+
+  const { data } = await createPublicClient()
+    .from("promotions")
+    .select("id, title, description, discount_percent")
+    .order("starts_at", { ascending: false })
+    .throwOnError();
+
+  return data.map((p) => ({
+    id: p.id,
+    title: p.title,
+    description: p.description,
+    discountPercent: p.discount_percent,
+  }));
+}
+
 export async function getCatalog(): Promise<Catalog> {
   "use cache";
   cacheLife("minutes");

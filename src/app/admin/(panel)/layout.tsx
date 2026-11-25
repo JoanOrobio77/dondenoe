@@ -1,23 +1,22 @@
-import Link from "next/link";
+import { AdminNav } from "@/components/admin-nav";
+import { Wordmark } from "@/components/wordmark";
 import { signOut } from "../actions";
 
 export default function PanelLayout({ children }: LayoutProps<"/admin">) {
   return (
     <>
-      <header className="border-b-4 border-accent bg-brand-900 text-white">
-        <div className="mx-auto flex max-w-5xl items-center gap-5 px-4 py-4">
-          <p className="text-lg font-bold">DondeNoe · Panel</p>
-          <nav className="flex gap-4 text-sm font-semibold text-brand-100">
-            <Link href="/admin" className="hover:text-white">
-              Pedidos
-            </Link>
-            <Link href="/admin/inventario" className="hover:text-white">
-              Inventario
-            </Link>
-          </nav>
-          <form action={signOut} className="ml-auto">
-            <button className="text-sm text-brand-100 underline hover:text-white">Salir</button>
-          </form>
+      <header className="border-b border-black/10 bg-[#fffaf6] px-4 py-5">
+        <div className="mx-auto max-w-5xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <Wordmark className="text-4xl" />
+              <p className="mt-1 text-sm font-semibold text-slate-500">Panel de administración</p>
+            </div>
+            <form action={signOut}>
+              <button className="rounded-full bg-white px-4 py-2 text-sm font-semibold ring-1 ring-black/10">Salir</button>
+            </form>
+          </div>
+          <AdminNav />
         </div>
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>

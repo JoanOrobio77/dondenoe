@@ -3,6 +3,7 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-fraunces);
 
   --color-brand-50: #eaf3f5;
   --color-brand-100: #c9dfe4;
@@ -12,6 +13,9 @@
 }
 
 body {
-  background: var(--color-brand-50);
+  background:
+    radial-gradient(900px 320px at 110% -8%, #ffd6db 0%, transparent 55%),
+    radial-gradient(700px 280px at -15% 8%, #d5eef3 0%, transparent 50%),
+    #f6f3ee;
   color: #1e293b;
 }

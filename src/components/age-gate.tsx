@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore, useState } from "react";
+import { Wordmark } from "./wordmark";
 
 const STORAGE_KEY = "dondenoe-adult";
 
@@ -21,7 +22,7 @@ export function AgeGate() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-900/90 p-6">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
-        <p className="text-2xl font-bold text-brand-900">DondeNoe</p>
+        <Wordmark className="text-4xl" />
         {answer === "minor" ? (
           <p className="mt-4 text-slate-600">
             Lo sentimos. La venta de licor y cigarrillo a menores de edad está prohibida en Colombia.

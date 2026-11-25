@@ -39,7 +39,15 @@ export function buildOrderMessage(items: CartItem[], order: OrderSummary) {
   ].join("\n");
 }
 
-export function whatsappLink(message: string) {
-  const phone = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "";
-  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+export function whatsappLink(message: string, phone = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "") {
+  const digits = phone.replace(/\D/g, "");
+  const full = digits.startsWith("57") && digits.length >= 12 ? digits : `57${digits}`;
+  return `https://wa.me/${full}?text=${encodeURIComponent(message)}`;
+}
+
+export function reminderMessage(name: string, promotion?: string) {
+  const offer = promotion
+    ? `Tenemos esta promoción: ${promotion}. ¿Te armamos el pedido?`
+    : "¿Te armamos el pedido para este fin de semana?";
+  return `Hola ${name}, te escribe DondeNoe. ${offer}`;
 }
