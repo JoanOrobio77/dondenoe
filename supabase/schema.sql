@@ -1,4 +1,5 @@
--- DondeNoe: esquema completo. Ejecutar una sola vez en Supabase > SQL Editor.
+-- DondeNoe: esquema completo. Ejecutar una sola vez en Supabase > SQL Editor,
+-- seguido de grants.sql y seed.sql.
 
 create extension if not exists pgcrypto;
 
