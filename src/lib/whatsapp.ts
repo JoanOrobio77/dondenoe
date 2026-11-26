@@ -45,6 +45,32 @@ export function whatsappLink(message: string, phone = process.env.NEXT_PUBLIC_WH
   return `https://wa.me/${full}?text=${encodeURIComponent(message)}`;
 }
 
+export function buildAppointmentMessage(input: {
+  storeName: string;
+  number: number;
+  service: string;
+  professional: string;
+  when: string;
+  price: number;
+  name: string;
+  notes: string;
+}) {
+  return [
+    `Hola ${input.storeName}, reservé la cita #${input.number}:`,
+    "",
+    `${input.service} con ${input.professional}`,
+    input.when,
+    `Valor: ${formatCOP(input.price)}`,
+    "",
+    `Nombre: ${input.name}`,
+    ...(input.notes ? [`Notas: ${input.notes}`] : []),
+  ].join("\n");
+}
+
+export function appointmentReminder(name: string, storeName: string, when: string, service: string) {
+  return `Hola ${name}, te recuerda ${storeName} tu cita de ${service} el ${when}. Si no puedes venir, avísanos por aquí.`;
+}
+
 export function reminderMessage(name: string, storeName: string, promotion?: string) {
   const offer = promotion
     ? `Tenemos esta promoción: ${promotion}. ¿Te armamos el pedido?`

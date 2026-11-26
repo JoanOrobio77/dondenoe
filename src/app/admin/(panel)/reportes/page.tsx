@@ -1,10 +1,17 @@
 import { Suspense } from "react";
-import { requireAdmin } from "@/lib/auth";
+import { requireOwner } from "@/lib/auth";
 import { formatCOP } from "@/lib/format";
 
 export const metadata = { title: "Reportes · DondeNoe" };
 
 const WEEKDAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+
+type SalesRow = {
+  product_name: string;
+  quantity: number;
+  sales: number;
+  profit: number;
+};
 
 export default function ReportsPage() {
   return (
@@ -15,21 +22,32 @@ export default function ReportsPage() {
 }
 
 async function Reports() {
-  const { supabase, business } = await requireAdmin();
+  const session = await requireOwner();
+  if (session.business.template === "agenda") return <AgendaReports />;
+  const { supabase, business } = session;
   const since = new Date();
   since.setDate(since.getDate() - 30);
-  const { data: orders } = await supabase
-    .from("orders")
-    .select("total, created_at, order_items(name, quantity, unit_price, unit_cost)")
-    .eq("business_id", business.id)
-    .eq("status", "entregado")
-    .gte("created_at", since.toISOString())
-    .throwOnError();
+  const until = new Date();
+  const [{ data: orders }, { data: sales }] = await Promise.all([
+    supabase
+      .from("orders")
+      .select("total, created_at")
+      .eq("business_id", business.id)
+      .eq("status", "entregado")
+      .gte("created_at", since.toISOString())
+      .lte("created_at", until.toISOString())
+      .throwOnError(),
+    supabase
+      .rpc("admin_sales_report", {
+        business_id: business.id,
+        desde: since.toISOString(),
+        hasta: until.toISOString(),
+      })
+      .throwOnError(),
+  ]);
 
-  const byProduct = new Map<string, { quantity: number; profit: number; sales: number }>();
   const byHour = new Array<number>(24).fill(0);
   const byDay = new Map<string, number>(WEEKDAYS.map((day) => [day, 0]));
-  let profit = 0;
 
   for (const order of orders) {
     const when = new Date(order.created_at);
@@ -37,18 +55,15 @@ async function Reports() {
     const day = new Intl.DateTimeFormat("es-CO", { weekday: "long", timeZone: business.timezone }).format(when).toLowerCase();
     byHour[hour] += 1;
     byDay.set(day, (byDay.get(day) ?? 0) + 1);
-
-    for (const item of order.order_items) {
-      const row = byProduct.get(item.name) ?? { quantity: 0, profit: 0, sales: 0 };
-      row.quantity += item.quantity;
-      row.sales += item.unit_price * item.quantity;
-      row.profit += (item.unit_price - item.unit_cost) * item.quantity;
-      profit += (item.unit_price - item.unit_cost) * item.quantity;
-      byProduct.set(item.name, row);
-    }
   }
 
-  const products = [...byProduct.entries()].map(([name, row]) => ({ name, ...row }));
+  const products = ((sales ?? []) as SalesRow[]).map((row) => ({
+    name: row.product_name,
+    quantity: Number(row.quantity),
+    sales: Number(row.sales),
+    profit: Number(row.profit),
+  }));
+  const profit = products.reduce((sum, row) => sum + row.profit, 0);
   const byQuantity = [...products].sort((a, b) => b.quantity - a.quantity).slice(0, 5);
   const byProfit = [...products].sort((a, b) => b.profit - a.profit).slice(0, 5);
   const peak = byHour.reduce((best, count, hour) => (count > best.count ? { hour, count } : best), { hour: 0, count: 0 });
@@ -109,6 +124,70 @@ async function Reports() {
                 </li>
               ))}
             </ul>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+async function AgendaReports() {
+  const { supabase, business } = await requireOwner();
+  const until = new Date();
+  const since = new Date(until.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const { data } = await supabase
+    .rpc("admin_appointment_report", {
+      p_business_id: business.id,
+      p_from: since.toISOString(),
+      p_to: until.toISOString(),
+    })
+    .throwOnError();
+  const rows = (data ?? []) as { section: string; label: string; citas: number; ingresos: number }[];
+  const states = rows.filter((row) => row.section === "estado");
+  const services = rows.filter((row) => row.section === "servicio");
+  const people = rows.filter((row) => row.section === "profesional");
+  const done = Number(states.find((row) => row.label === "completada")?.citas ?? 0);
+  const missed = Number(states.find((row) => row.label === "no_asistio")?.citas ?? 0);
+  const rate = done + missed === 0 ? null : Math.round((missed / (done + missed)) * 100);
+  const labels: Record<string, string> = {
+    pendiente: "Pendiente",
+    confirmada: "Confirmada",
+    completada: "Completada",
+    cancelada: "Cancelada",
+    no_asistio: "No asistió",
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-brand-900">Reportes</h1>
+        <p className="text-sm text-slate-600">Citas de los últimos 30 días. El ingreso cuenta solo las citas completadas.</p>
+      </div>
+      {rows.length === 0 ? (
+        <p className="rounded-2xl bg-white p-4 text-slate-600 ring-1 ring-brand-100">Cuando haya citas, aquí ves el estado, el ingreso y quién no asistió.</p>
+      ) : (
+        <>
+          <section className="grid gap-3 sm:grid-cols-3">
+            <Card label="Citas" value={String(states.reduce((sum, row) => sum + Number(row.citas), 0))} />
+            <Card
+              label="Ingresos completados"
+              value={formatCOP(services.reduce((sum, row) => sum + Number(row.ingresos), 0))}
+            />
+            <Card label="No asistencia" value={rate === null ? "—" : `${rate}%`} />
+          </section>
+          <section className="grid gap-3 md:grid-cols-3">
+            <Ranking
+              title="Por estado"
+              rows={states.map((row) => ({ name: labels[row.label] ?? row.label, value: String(row.citas) }))}
+            />
+            <Ranking
+              title="Por servicio"
+              rows={services.map((row) => ({ name: row.label, value: formatCOP(Number(row.ingresos)) }))}
+            />
+            <Ranking
+              title="Por profesional"
+              rows={people.map((row) => ({ name: row.label, value: formatCOP(Number(row.ingresos)) }))}
+            />
           </section>
         </>
       )}

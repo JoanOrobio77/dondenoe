@@ -2,7 +2,7 @@
 
 import { refresh, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireOwner } from "@/lib/auth";
 import { createServerSupabase } from "@/lib/supabase/server";
 
 const NEXT_STATUS = {
@@ -87,34 +87,42 @@ function bogotaTimestamp(value: FormDataEntryValue | null) {
 }
 
 export async function updateProduct(formData: FormData) {
-  const { supabase, business } = await requireAdmin();
+  const { supabase, business, owner } = await requireAdmin();
   const price = pesos(formData, "price");
   const cost = pesos(formData, "cost");
   const minStock = Math.trunc(Number(formData.get("minStock")));
   const name = String(formData.get("name") ?? "").trim();
   const categoryId = Number(formData.get("categoryId"));
   const description = formData.get("description");
-  if (price === null || cost === null || !name || minStock < 0) throw new Error("Revisa el nombre, el precio y el costo");
+  const agendaStaff = business.template === "agenda" && !owner;
+  if ((!agendaStaff && price === null) || !name || !Number.isFinite(minStock) || minStock < 0) {
+    throw new Error(owner ? "Revisa el nombre, el precio y el costo" : "Revisa el nombre y el precio");
+  }
+  if (owner && cost === null) throw new Error("Revisa el nombre, el precio y el costo");
 
   const productId = String(formData.get("productId"));
   await supabase
     .from("products")
     .update({
       name,
-      price,
+      ...(agendaStaff ? {} : { price }),
       active: formData.get("active") === "on",
+      ...(!owner ? { min_stock: minStock } : {}),
       ...(categoryId ? { category_id: categoryId } : {}),
       ...(description !== null ? { description: String(description).trim() || null } : {}),
     })
     .eq("id", productId)
+    .eq("business_id", business.id)
     .throwOnError();
-  const { error: privateError } = await supabase.rpc("admin_set_product_private", {
-    business_id: business.id,
-    product_id: productId,
-    cost,
-    min_stock: minStock,
-  });
-  if (privateError) throw new Error("No se pudo guardar el costo");
+  if (owner) {
+    const { error: privateError } = await supabase.rpc("admin_set_product_private", {
+      business_id: business.id,
+      product_id: productId,
+      cost,
+      min_stock: minStock,
+    });
+    if (privateError) throw new Error("No se pudo guardar el costo");
+  }
   updateTag(`catalog:${business.slug}`);
   refresh();
 }
@@ -166,7 +174,7 @@ type NewProductInput =
       name: string;
       categoryId: number;
       price: number;
-      cost: number;
+      cost: number | null;
       stock: number;
       minStock: number;
       description: string;
@@ -174,9 +182,9 @@ type NewProductInput =
       file: File | null;
     };
 
-function readNewProduct(formData: FormData): NewProductInput {
+function readNewProduct(formData: FormData, owner: boolean): NewProductInput {
   const price = pesos(formData, "price");
-  const cost = pesos(formData, "cost");
+  const cost = owner ? pesos(formData, "cost") : null;
   const name = String(formData.get("name") ?? "").trim();
   const categoryId = Number(formData.get("categoryId"));
   const stock = Math.trunc(Number(formData.get("stock") || 0));
@@ -188,7 +196,7 @@ function readNewProduct(formData: FormData): NewProductInput {
   if (!name || name.length > 120) return { ok: false, error: "Escribe el nombre del producto." };
   if (!categoryId) return { ok: false, error: "Elige una categoría." };
   if (price === null || price <= 0) return { ok: false, error: "El precio de venta tiene que ser mayor que 0." };
-  if (cost === null) return { ok: false, error: "Escribe el costo. Si todavía no lo sabes, pon 0." };
+  if (owner && cost === null) return { ok: false, error: "Escribe el costo. Si todavía no lo sabes, pon 0." };
   if (!Number.isFinite(stock) || stock < 0 || !Number.isFinite(minStock) || minStock < 0) {
     return { ok: false, error: "El stock no puede ser negativo." };
   }
@@ -201,8 +209,8 @@ function readNewProduct(formData: FormData): NewProductInput {
 }
 
 export async function createProduct(_prev: string | null | undefined, formData: FormData): Promise<string | null> {
-  const { supabase, business } = await requireAdmin();
-  const input = readNewProduct(formData);
+  const { supabase, business, owner } = await requireAdmin();
+  const input = readNewProduct(formData, owner);
   if (!input.ok) return input.error;
 
   const { data: created, error } = await supabase
@@ -220,15 +228,31 @@ export async function createProduct(_prev: string | null | undefined, formData: 
     .single();
   if (error || !created) return "No se pudo crear el producto. Entra de nuevo al panel e inténtalo otra vez.";
 
-  const { error: privateError } = await supabase.rpc("admin_set_product_private", {
-    business_id: business.id,
-    product_id: created.id,
-    cost: input.cost,
-    min_stock: input.minStock,
-  });
-  if (privateError) {
-    await supabase.from("products").delete().eq("id", created.id);
-    return "No se pudo guardar el costo del producto.";
+  if (owner) {
+    if (input.cost === null) {
+      await supabase.from("products").delete().eq("id", created.id).eq("business_id", business.id);
+      return "No se pudo guardar el costo del producto.";
+    }
+    const { error: privateError } = await supabase.rpc("admin_set_product_private", {
+      business_id: business.id,
+      product_id: created.id,
+      cost: input.cost,
+      min_stock: input.minStock,
+    });
+    if (privateError) {
+      await supabase.from("products").delete().eq("id", created.id).eq("business_id", business.id);
+      return "No se pudo guardar el costo del producto.";
+    }
+  } else {
+    const { error: minError } = await supabase
+      .from("products")
+      .update({ min_stock: input.minStock })
+      .eq("id", created.id)
+      .eq("business_id", business.id);
+    if (minError) {
+      await supabase.from("products").update({ active: false }).eq("id", created.id).eq("business_id", business.id);
+      return "No se pudo guardar el stock mínimo.";
+    }
   }
 
   const discard = async () => {
@@ -237,7 +261,11 @@ export async function createProduct(_prev: string | null | undefined, formData: 
       `${business.id}/${created.id}.png`,
       `${business.id}/${created.id}.webp`,
     ]);
-    await supabase.from("products").delete().eq("id", created.id);
+    if (owner) {
+      await supabase.from("products").delete().eq("id", created.id).eq("business_id", business.id);
+    } else {
+      await supabase.from("products").update({ active: false, image_url: null }).eq("id", created.id).eq("business_id", business.id);
+    }
   };
 
   if (input.file) {
@@ -287,6 +315,66 @@ export async function updateProductImage(_prev: string | null | undefined, formD
   updateTag(`catalog:${business.slug}`);
   refresh();
   return null;
+}
+
+async function removeRow(table: "products" | "combos" | "delivery_zones", column: "id", value: string) {
+  const { supabase, business } = await requireOwner();
+  const { error, count } = await supabase
+    .from(table)
+    .delete({ count: "exact" })
+    .eq(column, value)
+    .eq("business_id", business.id);
+  if (error || !count) throw new Error("No se pudo borrar. Si ya tiene pedidos, desactívalo.");
+  updateTag(`catalog:${business.slug}`);
+  refresh();
+}
+
+export async function setProductActive(formData: FormData) {
+  const { supabase, business } = await requireAdmin();
+  await supabase
+    .from("products")
+    .update({ active: formData.get("active") === "true" })
+    .eq("id", String(formData.get("productId") ?? ""))
+    .eq("business_id", business.id)
+    .throwOnError();
+  updateTag(`catalog:${business.slug}`);
+  refresh();
+}
+
+export async function deleteProduct(formData: FormData) {
+  await removeRow("products", "id", String(formData.get("productId") ?? ""));
+}
+
+export async function setComboActive(formData: FormData) {
+  const { supabase, business } = await requireAdmin();
+  await supabase
+    .from("combos")
+    .update({ active: formData.get("active") === "true" })
+    .eq("id", String(formData.get("comboId") ?? ""))
+    .eq("business_id", business.id)
+    .throwOnError();
+  updateTag(`catalog:${business.slug}`);
+  refresh();
+}
+
+export async function deleteCombo(formData: FormData) {
+  await removeRow("combos", "id", String(formData.get("comboId") ?? ""));
+}
+
+export async function setZoneActive(formData: FormData) {
+  const { supabase, business } = await requireAdmin();
+  await supabase
+    .from("delivery_zones")
+    .update({ active: formData.get("active") === "true" })
+    .eq("id", Number(formData.get("zoneId")))
+    .eq("business_id", business.id)
+    .throwOnError();
+  updateTag(`catalog:${business.slug}`);
+  refresh();
+}
+
+export async function deleteZone(formData: FormData) {
+  await removeRow("delivery_zones", "id", String(formData.get("zoneId") ?? ""));
 }
 
 export async function updateZone(formData: FormData) {

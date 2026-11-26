@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { requireAdmin } from "@/lib/auth";
-import { createZone, updateZone } from "../../actions";
+import { createZone, deleteZone, setZoneActive, updateZone } from "../../actions";
 
 export const metadata = { title: "Zonas · DondeNoe" };
 
@@ -15,7 +15,7 @@ export default function ZonesPage() {
 }
 
 async function Zones() {
-  const { supabase, business } = await requireAdmin();
+  const { supabase, business, owner } = await requireAdmin();
   const { data: zones } = await supabase
     .from("delivery_zones")
     .select("id, name, fee, active")
@@ -44,6 +44,21 @@ async function Zones() {
               </label>
               <button className="rounded-lg bg-brand-700 px-3 py-2 text-sm font-bold text-white">Guardar</button>
             </form>
+            <div className="mt-2 flex gap-2">
+              <form action={setZoneActive}>
+                <input type="hidden" name="zoneId" value={zone.id} />
+                <input type="hidden" name="active" value={zone.active ? "false" : "true"} />
+                <button className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-200">
+                  {zone.active ? "Desactivar" : "Activar"}
+                </button>
+              </form>
+              {owner && (
+                <form action={deleteZone}>
+                  <input type="hidden" name="zoneId" value={zone.id} />
+                  <button className="rounded-lg px-3 py-2 text-sm text-slate-500 ring-1 ring-slate-200">Borrar</button>
+                </form>
+              )}
+            </div>
           </li>
         ))}
       </ul>

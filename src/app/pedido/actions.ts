@@ -1,6 +1,6 @@
 "use server";
 
-import { resolveRequest, storeIsOpen } from "@/lib/store";
+import { resolveRequest } from "@/lib/store";
 import { createPublicClient, isSupabaseConfigured } from "@/lib/supabase/public";
 import type { CartItem } from "@/lib/types";
 import { PAYMENT_METHODS, type PaymentMethod } from "@/lib/whatsapp";
@@ -22,6 +22,7 @@ const SAFE_ORDER_ERRORS = new Set([
   "Un combo del pedido ya no está disponible",
   "Ningún producto del pedido está disponible",
   "Este negocio no está recibiendo pedidos",
+  "Tienda temporalmente no disponible",
   "En este momento la tienda está cerrada",
   "Este negocio no hace domicilios",
 ]);
@@ -59,8 +60,8 @@ export async function placeOrder(_prev: PlaceOrderState, formData: FormData): Pr
   }
 
   const { store } = await resolveRequest();
-  if (!store || !storeIsOpen(store.status)) {
-    return { status: "error", message: "Este negocio no está recibiendo pedidos" };
+  if (!store || !store.ordersOpen) {
+    return { status: "error", message: "Tienda temporalmente no disponible" };
   }
   if (store.ageVerification && !ageConfirmed) {
     return { status: "error", message: "Debes confirmar que eres mayor de 18 años." };

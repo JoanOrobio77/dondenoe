@@ -13,7 +13,7 @@ export default function PanelLayout({ children }: LayoutProps<"/admin">) {
 }
 
 async function PanelShell({ children }: { children: ReactNode }) {
-  const { business } = await requireAdmin();
+  const { business, owner } = await requireAdmin();
   return (
     <>
       <header className="border-b border-black/10 bg-[#fffaf6] px-4 py-5">
@@ -33,7 +33,14 @@ async function PanelShell({ children }: { children: ReactNode }) {
               <button className="rounded-full bg-white px-4 py-2 text-sm font-semibold ring-1 ring-black/10">Salir</button>
             </form>
           </div>
-          <AdminNav />
+          {(business.status === "past_due" || business.status === "suspended") && (
+            <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              {business.template === "agenda"
+                ? "Hay un pago pendiente. La agenda puede dejar de recibir citas. Los datos no se borran."
+                : "Hay un pago pendiente. La tienda puede dejar de recibir pedidos. Los datos no se borran."}
+            </p>
+          )}
+          <AdminNav owner={owner} template={business.template} />
         </div>
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>

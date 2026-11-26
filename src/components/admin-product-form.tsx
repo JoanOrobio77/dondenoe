@@ -23,7 +23,13 @@ async function withPhoto(form: HTMLFormElement) {
   return data;
 }
 
-export function NewProductForm({ categories }: { categories: ProductCategoryOption[] }) {
+export function NewProductForm({
+  categories,
+  canSetCost,
+}: {
+  categories: ProductCategoryOption[];
+  canSetCost: boolean;
+}) {
   const [error, submit, pending] = useActionState(createProduct, null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [price, setPrice] = useState("");
@@ -94,25 +100,29 @@ export function NewProductForm({ categories }: { categories: ProductCategoryOpti
           className={inputClass}
         />
       </label>
-      <label className="block text-sm font-semibold text-slate-700">
-        Costo
-        <input
-          name="cost"
-          type="number"
-          min={0}
-          required
-          value={cost}
-          onChange={(event) => setCost(event.target.value)}
-          placeholder="52000"
-          className={inputClass}
-        />
-      </label>
-      <p className="text-sm text-slate-600 md:col-span-2">
-        {margin === null
-          ? "El margen aparece cuando escribes precio y costo. Pesos enteros, sin decimales."
-          : `Margen: ${margin}% · ganas ${formatCOP(priceValue - costValue)} por unidad.`}
-        {margin !== null && margin < 0 && " El precio está por debajo del costo."}
-      </p>
+      {canSetCost && (
+        <label className="block text-sm font-semibold text-slate-700">
+          Costo
+          <input
+            name="cost"
+            type="number"
+            min={0}
+            required
+            value={cost}
+            onChange={(event) => setCost(event.target.value)}
+            placeholder="52000"
+            className={inputClass}
+          />
+        </label>
+      )}
+      {canSetCost && (
+        <p className="text-sm text-slate-600 md:col-span-2">
+          {margin === null
+            ? "El margen aparece cuando escribes precio y costo. Pesos enteros, sin decimales."
+            : `Margen: ${margin}% · ganas ${formatCOP(priceValue - costValue)} por unidad.`}
+          {margin !== null && margin < 0 && " El precio está por debajo del costo."}
+        </p>
+      )}
       <label className="block text-sm font-semibold text-slate-700">
         Stock inicial
         <input name="stock" type="number" min={0} defaultValue={0} required className={inputClass} />

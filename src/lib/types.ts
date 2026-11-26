@@ -31,7 +31,7 @@ export type AdminProductRow = {
   name: string;
   description: string | null;
   price: number;
-  cost: number;
+  cost: number | null;
   stock: number;
   min_stock: number;
   image_url: string | null;
@@ -59,6 +59,8 @@ export type Store = {
   tobaccoRules: boolean;
   delivery: boolean;
   openingHours: OpeningHours;
+  ordersOpen: boolean;
+  template: "tienda" | "agenda";
 };
 
 export type DeliveryZone = {

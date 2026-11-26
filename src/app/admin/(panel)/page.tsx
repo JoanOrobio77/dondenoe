@@ -1,6 +1,8 @@
 import { Suspense } from "react";
+import { AgendaBoard } from "@/components/agenda-board";
 import { requireAdmin } from "@/lib/auth";
 import { formatCOP } from "@/lib/format";
+import { zonedDateKey } from "@/lib/zoned-time";
 import { PAYMENT_METHODS, type PaymentMethod } from "@/lib/whatsapp";
 import { updateOrderStatus } from "../actions";
 
@@ -28,16 +30,31 @@ const NEXT_ACTION: Record<string, { status: string; label: string } | undefined>
   en_camino: { status: "entregado", label: "Entregado (cédula verificada)" },
 };
 
-export default function OrdersPage() {
+export default function OrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ dia?: string; vista?: string; error?: string }>;
+}) {
   return (
     <Suspense fallback={<p className="text-slate-500">Cargando pedidos...</p>}>
-      <Orders />
+      <Orders searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Orders() {
+async function Orders({
+  searchParams,
+}: {
+  searchParams: Promise<{ dia?: string; vista?: string; error?: string }>;
+}) {
   const { supabase, business } = await requireAdmin();
+  if (business.template === "agenda") {
+    const query = await searchParams;
+    const today = zonedDateKey(new Date(), business.timezone);
+    const day = query.dia && /^\d{4}-\d{2}-\d{2}$/.test(query.dia) ? query.dia : today;
+    const view = query.vista === "semana" ? "semana" : "dia";
+    return <AgendaBoard supabase={supabase} business={business} day={day} view={view} error={query.error} />;
+  }
   const { data: orders } = await supabase
     .from("orders")
     .select(

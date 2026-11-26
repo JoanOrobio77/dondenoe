@@ -92,3 +92,36 @@ cross join (values
   ('Zona lejana', 8000)
 ) as zone(name, fee)
 where slug = 'dondenoe';
+
+insert into business_domains (business_id, domain, verified)
+select id, 'dondenoe.vercel.app', true
+from businesses
+where slug = 'dondenoe'
+on conflict (domain) do nothing;
+
+-- Borrador del catálogo maestro. Sin códigos, precios ni fotos. Revisar en el superpanel.
+insert into master_products (name, brand, kind, presentation, volume_ml, units_per_pack, aliases, draft, active) values
+  ('Aguardiente Antioqueño', 'Antioqueño', 'aguardiente', '750 ml', 750, 1, array['guaro','tapa azul'], true, true),
+  ('Aguardiente Antioqueño', 'Antioqueño', 'aguardiente', '375 ml', 375, 1, array['media','media de aguardiente'], true, true),
+  ('Aguardiente Antioqueño sin azúcar', 'Antioqueño', 'aguardiente', '750 ml', 750, 1, array['tapa azul sin azúcar'], true, true),
+  ('Aguardiente Néctar verde', 'Néctar', 'aguardiente', '750 ml', 750, 1, array['nectar'], true, true),
+  ('Ron Medellín 3 años', 'Ron Medellín', 'ron', '750 ml', 750, 1, array['ron medellin'], true, true),
+  ('Ron Viejo de Caldas', 'Viejo de Caldas', 'ron', '750 ml', 750, 1, array['viejito'], true, true),
+  ('Old Parr 12 años', 'Old Parr', 'whisky', '750 ml', 750, 1, array['old par'], true, true),
+  ('Buchanan''s 12 años', 'Buchanan''s', 'whisky', '750 ml', 750, 1, array['buchanans'], true, true),
+  ('Gato Negro', 'Gato Negro', 'vino', '750 ml', 750, 1, array['gato'], true, true),
+  ('Poker', 'Poker', 'cerveza', 'lata 330 ml', 330, 1, array['pola'], true, true),
+  ('Poker', 'Poker', 'cerveza', 'six-pack', null, 6, array['six de poker'], true, true),
+  ('Águila', 'Águila', 'cerveza', 'lata 330 ml', 330, 1, array['aguila'], true, true),
+  ('Club Colombia Dorada', 'Club Colombia', 'cerveza', 'lata 330 ml', 330, 1, array['club colombia'], true, true),
+  ('Corona', 'Corona', 'cerveza', 'botella 355 ml', 355, 1, array['corona'], true, true),
+  ('Coca-Cola', 'Coca-Cola', 'mezclador', '1,5 L', 1500, 1, array['coca cola','gaseosa'], true, true),
+  ('Coca-Cola', 'Coca-Cola', 'mezclador', '400 ml', 400, 1, array['coca personal'], true, true),
+  ('Agua Cristal', 'Cristal', 'mezclador', '600 ml', 600, 1, array['agua'], true, true),
+  ('Ginger Ale Canada Dry', 'Canada Dry', 'mezclador', '400 ml', 400, 1, array['ginger'], true, true),
+  ('Hielo', 'Genérico', 'hielo', 'bolsa 2 kg', null, 1, array['hielo en cubos'], true, true),
+  ('Papas Margarita', 'Margarita', 'snack', '105 g', null, 1, array['papas'], true, true),
+  ('Maní La Especial', 'La Especial', 'snack', '180 g', null, 1, array['mani'], true, true),
+  ('Lucky Strike', 'Lucky Strike', 'cigarrillo', 'cajetilla x20', null, 20, array['lucky'], true, true),
+  ('Marlboro Rojo', 'Marlboro', 'cigarrillo', 'cajetilla x20', null, 20, array['marlboro'], true, true)
+on conflict (identity_key) do nothing;

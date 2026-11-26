@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AgeGate } from "@/components/age-gate";
+import { AgendaBooking, type AgendaInfo } from "@/components/agenda-booking";
 import { CartBar } from "@/components/cart-bar";
 import { CatalogView } from "@/components/catalog-view";
 import { StoreBrand } from "@/components/store-brand";
@@ -8,12 +9,21 @@ import { StoreUnavailable } from "@/components/store-unavailable";
 import { getCatalog, getPromotions } from "@/lib/catalog";
 import { formatCOP } from "@/lib/format";
 import { formatOpeningHours } from "@/lib/hours";
-import { resolveRequest, storeIsOpen } from "@/lib/store";
+import { resolveRequest } from "@/lib/store";
+import { createPublicClient } from "@/lib/supabase/public";
+import type { Store } from "@/lib/types";
 import { whatsappLink } from "@/lib/whatsapp";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { store } = await resolveRequest();
-  if (!store || !storeIsOpen(store.status)) return { title: "Tienda no disponible" };
+  if (!store) return { title: "Tienda no disponible" };
+  if (store.template === "agenda") {
+    return {
+      title: store.ordersOpen ? store.name : "Agenda temporalmente no disponible",
+      description: `Reserva una cita en ${store.name}.`,
+    };
+  }
+  if (!store.ordersOpen) return { title: "Tienda temporalmente no disponible" };
   return {
     title: `${store.name} · Licores y domicilios`,
     description: `Pide en ${store.name}. Solo mayores de 18 años cuando la tienda lo exige.`,
@@ -46,16 +56,16 @@ async function StoreHome() {
       />
     );
   }
-  if (!storeIsOpen(store.status)) {
+  if (store.template === "agenda") {
+    if (!store.ordersOpen) {
+      return <StoreUnavailable title="Agenda temporalmente no disponible" detail="Vuelve a intentar más tarde." />;
+    }
+    return <AgendaHome store={store} />;
+  }
+
+  if (!store.ordersOpen) {
     return (
-      <StoreUnavailable
-        title={`${store.name} no está disponible`}
-        detail={
-          store.status === "past_due"
-            ? "Esta tienda tiene el pago pendiente y no está recibiendo pedidos."
-            : "Esta tienda está suspendida y no está recibiendo pedidos."
-        }
-      />
+      <StoreUnavailable title="Tienda temporalmente no disponible" detail="Vuelve a intentar más tarde." />
     );
   }
 
@@ -143,6 +153,49 @@ async function StoreHome() {
       </footer>
 
       <CartBar slug={store.slug} />
+    </>
+  );
+}
+
+async function AgendaHome({ store }: { store: Store }) {
+  const { data } = await createPublicClient().rpc("public_agenda", { p_slug: store.slug });
+  const agenda = data as AgendaInfo | null;
+  const hours = formatOpeningHours(store.openingHours);
+  if (!agenda) {
+    return <StoreUnavailable title="Agenda temporalmente no disponible" detail="Vuelve a intentar más tarde." />;
+  }
+
+  return (
+    <>
+      <header className="relative overflow-hidden px-4 pb-7 pt-8">
+        <div className="mx-auto max-w-3xl">
+          <h1>
+            <StoreBrand
+              name={store.name}
+              slug={store.slug}
+              logoUrl={store.logoUrl}
+              brandColor={store.brandColor}
+              className="text-6xl sm:text-7xl"
+            />
+          </h1>
+          <p className="mt-3 max-w-sm text-lg text-slate-700">Elige el servicio, la persona y la hora.</p>
+          {agenda.address && <p className="mt-3 text-sm font-semibold text-slate-600">{agenda.address}</p>}
+          {hours && <p className="mt-1 text-sm text-slate-600">Horario: {hours}</p>}
+          {store.whatsapp && (
+            <a
+              href={whatsappLink(`Hola ${store.name}, quiero una cita.`, store.whatsapp)}
+              className="mt-4 inline-block rounded-full px-3 py-1.5 text-sm font-bold text-white"
+              style={{ background: store.brandColor }}
+            >
+              Escribir por WhatsApp
+            </a>
+          )}
+        </div>
+        <div className="absolute inset-x-0 bottom-0 h-1.5" style={{ background: store.brandColor }} />
+      </header>
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
+        <AgendaBooking store={store} agenda={agenda} />
+      </main>
     </>
   );
 }

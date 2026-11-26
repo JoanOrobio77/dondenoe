@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { headers } from "next/headers";
 import { createPublicClient, isSupabaseConfigured } from "./supabase/public";
+import { tenantHint } from "./tenant";
 import type { OpeningHours, Store, StoreStatus } from "./types";
 
 const DONDENOE_HOURS: OpeningHours = {
@@ -26,11 +27,9 @@ export const demoStore: Store = {
   tobaccoRules: true,
   delivery: true,
   openingHours: DONDENOE_HOURS,
+  ordersOpen: true,
+  template: "tienda",
 };
-
-export function storeIsOpen(status: StoreStatus) {
-  return status === "trial" || status === "active";
-}
 
 type StoreRow = {
   id: string;
@@ -45,6 +44,8 @@ type StoreRow = {
   tobacco_rules: boolean;
   delivery: boolean;
   opening_hours: OpeningHours;
+  orders_open?: boolean;
+  template?: string;
 };
 
 function mapStore(row: StoreRow): Store {
@@ -61,6 +62,8 @@ function mapStore(row: StoreRow): Store {
     tobaccoRules: row.tobacco_rules,
     delivery: row.delivery,
     openingHours: row.opening_hours ?? {},
+    ordersOpen: typeof row.orders_open === "boolean" ? row.orders_open : row.status === "trial" || row.status === "active",
+    template: row.template === "agenda" ? "agenda" : "tienda",
   };
 }
 
@@ -71,11 +74,29 @@ export async function loadStore(slug: string): Promise<Store | null> {
   return mapStore(data);
 }
 
+export async function loadStoreByDomain(domain: string): Promise<Store | null> {
+  if (!isSupabaseConfigured()) return null;
+  const { data, error } = await createPublicClient()
+    .rpc("public_store_by_domain", { p_domain: domain })
+    .maybeSingle<StoreRow>();
+  if (error || !data) return null;
+  return mapStore(data);
+}
+
 export const resolveRequest = cache(async () => {
   const headerStore = await headers();
-  const raw = headerStore.get("x-business-slug")?.trim().toLowerCase() ?? "";
-  const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(raw) ? raw : null;
-  if (!isSupabaseConfigured()) return { slug: slug ?? "dondenoe", store: demoStore };
-  if (!slug) return { slug: null, store: null };
-  return { slug, store: await loadStore(slug) };
+  const host = headerStore.get("x-business-host") || headerStore.get("x-forwarded-host") || headerStore.get("host");
+  const hint = tenantHint(host, headerStore.get("x-business-query"));
+
+  if (!isSupabaseConfigured()) {
+    const slug = hint.slug ?? (hint.domain ? null : "dondenoe");
+    return { slug, store: slug === "dondenoe" ? demoStore : null };
+  }
+
+  if (hint.domain) {
+    const byDomain = await loadStoreByDomain(hint.domain);
+    if (byDomain) return { slug: byDomain.slug, store: byDomain };
+  }
+  if (!hint.slug) return { slug: null, store: null };
+  return { slug: hint.slug, store: await loadStore(hint.slug) };
 });

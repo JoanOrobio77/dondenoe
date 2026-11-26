@@ -1,6 +1,6 @@
 import { cacheLife, cacheTag } from "next/cache";
 import { demoCatalog } from "./demo-data";
-import { loadStore, storeIsOpen } from "./store";
+import { loadStore } from "./store";
 import { createPublicClient, isSupabaseConfigured } from "./supabase/public";
 import type { Catalog } from "./types";
 
@@ -18,7 +18,7 @@ export async function getPromotions(slug: string): Promise<Promotion[]> {
 
   if (!isSupabaseConfigured()) return [];
   const store = await loadStore(slug);
-  if (!store || !storeIsOpen(store.status)) return [];
+  if (!store || !store.ordersOpen) return [];
 
   const { data } = await createPublicClient()
     .from("promotions")
@@ -42,7 +42,7 @@ export async function getCatalog(slug: string): Promise<Catalog> {
 
   if (!isSupabaseConfigured()) return demoCatalog;
   const store = await loadStore(slug);
-  if (!store || !storeIsOpen(store.status)) {
+  if (!store || !store.ordersOpen) {
     return { categories: [], products: [], combos: [], zones: [] };
   }
 

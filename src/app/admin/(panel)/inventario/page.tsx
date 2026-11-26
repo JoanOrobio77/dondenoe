@@ -17,7 +17,7 @@ export default function InventoryPage() {
 }
 
 async function Inventory() {
-  const { supabase, business } = await requireAdmin();
+  const { supabase, business, owner } = await requireAdmin();
   const [{ data }, { data: categories }] = await Promise.all([
     supabase.rpc("admin_list_products", { business_id: business.id }).throwOnError(),
     supabase.from("categories").select("id, name, allows_promotion").eq("business_id", business.id).order("sort_order").throwOnError(),
@@ -35,7 +35,9 @@ async function Inventory() {
       <div>
         <h1 className="text-2xl font-bold text-brand-900">Inventario</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Da de alta un producto con su foto, costo y precio. El stock inicial queda registrado como una entrada.
+          {owner
+            ? "Da de alta un producto con su foto, costo y precio. El stock inicial queda registrado como una entrada."
+            : "Da de alta un producto con su foto y precio. El stock inicial queda registrado como una entrada."}
         </p>
       </div>
 
@@ -43,6 +45,7 @@ async function Inventory() {
         <h2 className="text-lg font-bold text-brand-900">Nuevo producto</h2>
         <div className="mt-3">
           <NewProductForm
+            canSetCost={owner}
             categories={categories.map((category) => ({
               id: category.id,
               name: category.name,
@@ -71,8 +74,8 @@ async function Inventory() {
             <tr>
               <th className="p-3">Producto</th>
               <th className="p-3 text-right">Precio</th>
-              <th className="p-3 text-right">Costo</th>
-              <th className="p-3 text-right">Margen</th>
+              {owner && <th className="p-3 text-right">Costo</th>}
+              {owner && <th className="p-3 text-right">Margen</th>}
               <th className="p-3 text-right">Stock</th>
               <th className="p-3">Registrar movimiento</th>
             </tr>
@@ -107,8 +110,12 @@ async function Inventory() {
                     </div>
                   </td>
                   <td className="p-3 text-right">{formatCOP(product.price)}</td>
-                  <td className="p-3 text-right">{formatCOP(product.cost)}</td>
-                  <td className="p-3 text-right">{product.price ? Math.round(((product.price - product.cost) / product.price) * 100) : 0}%</td>
+                  {owner && <td className="p-3 text-right">{formatCOP(product.cost ?? 0)}</td>}
+                  {owner && (
+                    <td className="p-3 text-right">
+                      {product.price ? Math.round(((product.price - (product.cost ?? 0)) / product.price) * 100) : 0}%
+                    </td>
+                  )}
                   <td className="p-3 text-right">
                     <span className="text-lg font-bold">{product.stock}</span>
                     <span className="block text-xs text-slate-500">mín. {product.min_stock}</span>

@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import { requireAdmin } from "@/lib/auth";
 import { formatCOP } from "@/lib/format";
-import { reminderMessage, whatsappLink } from "@/lib/whatsapp";
+import { formatWhen } from "@/lib/zoned-time";
+import { appointmentReminder, reminderMessage, whatsappLink } from "@/lib/whatsapp";
 
 export const metadata = { title: "Clientes · DondeNoe" };
 
@@ -15,6 +16,7 @@ export default function CustomersPage() {
 
 async function Customers() {
   const { supabase, business } = await requireAdmin();
+  if (business.template === "agenda") return <AgendaCustomers />;
   const [{ data: customers }, { data: promotions }] = await Promise.all([
     supabase
       .from("customers")
@@ -83,6 +85,49 @@ async function Customers() {
             </a>
           </li>
         ))}
+      </ul>
+    </div>
+  );
+}
+
+async function AgendaCustomers() {
+  const { supabase, business } = await requireAdmin();
+  const { data: customers } = await supabase
+    .from("customers")
+    .select("id, name, phone, appointments(number, status, starts_at, products(name))")
+    .eq("business_id", business.id)
+    .order("created_at", { ascending: false })
+    .throwOnError();
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold text-brand-900">Clientes ({customers.length})</h1>
+      <p className="text-sm text-slate-600">El recordatorio abre WhatsApp. No se envía solo.</p>
+      {customers.length === 0 && <p className="text-slate-500">Todavía no hay clientes. Aparecen con la primera cita.</p>}
+      <ul className="grid gap-3">
+        {customers.map((customer) => {
+          const visits = (customer.appointments as { number: number; status: string; starts_at: string; products: { name: string } | { name: string }[] | null }[]) ?? [];
+          const next = [...visits].sort((a, b) => b.starts_at.localeCompare(a.starts_at))[0];
+          const service = next ? (Array.isArray(next.products) ? next.products[0]?.name : next.products?.name) : null;
+          const when = next ? formatWhen(next.starts_at, business.timezone) : "";
+          return (
+            <li key={customer.id} className="rounded-2xl bg-white p-4 ring-1 ring-brand-100">
+              <p className="font-bold text-brand-900">{customer.name}</p>
+              <p className="text-sm text-slate-600">{customer.phone}</p>
+              <p className="mt-2 text-sm">{visits.length} citas{next ? ` · última ${when}` : ""}</p>
+              {next && (
+                <a
+                  href={whatsappLink(appointmentReminder(customer.name, business.name, when, service ?? "tu cita"), customer.phone)}
+                  target="_blank"
+                  rel="noopener"
+                  className="mt-3 inline-block rounded-xl bg-[#25D366] px-4 py-2 text-sm font-bold text-white"
+                >
+                  Recordar por WhatsApp
+                </a>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

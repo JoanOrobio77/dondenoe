@@ -4,7 +4,7 @@ import { CheckoutForm } from "@/components/checkout-form";
 import { StoreBrand } from "@/components/store-brand";
 import { StoreUnavailable } from "@/components/store-unavailable";
 import { getCatalog } from "@/lib/catalog";
-import { resolveRequest, storeIsOpen } from "@/lib/store";
+import { resolveRequest } from "@/lib/store";
 
 export async function generateMetadata() {
   const { store } = await resolveRequest();
@@ -21,13 +21,24 @@ export default function OrderPage() {
 
 async function Order() {
   const { slug, store } = await resolveRequest();
-  if (!slug || !store || !storeIsOpen(store.status)) {
+  if (!slug || !store) {
     return (
       <StoreUnavailable
         title="No se puede armar el pedido"
         detail="Esta tienda no está recibiendo pedidos en esta dirección."
       />
     );
+  }
+  if (store.template === "agenda") {
+    return (
+      <StoreUnavailable
+        title="Este negocio trabaja con citas"
+        detail="Vuelve al inicio para elegir el servicio y la hora."
+      />
+    );
+  }
+  if (!store.ordersOpen) {
+    return <StoreUnavailable title="Tienda temporalmente no disponible" detail="Vuelve a intentar más tarde." />;
   }
   const { zones } = await getCatalog(store.slug);
 
