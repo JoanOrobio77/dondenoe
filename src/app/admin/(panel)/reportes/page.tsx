@@ -15,12 +15,13 @@ export default function ReportsPage() {
 }
 
 async function Reports() {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const since = new Date();
   since.setDate(since.getDate() - 30);
   const { data: orders } = await supabase
     .from("orders")
     .select("total, created_at, order_items(name, quantity, unit_price, unit_cost)")
+    .eq("business_id", business.id)
     .eq("status", "entregado")
     .gte("created_at", since.toISOString())
     .throwOnError();
@@ -32,8 +33,8 @@ async function Reports() {
 
   for (const order of orders) {
     const when = new Date(order.created_at);
-    const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: "America/Bogota" }).format(when));
-    const day = new Intl.DateTimeFormat("es-CO", { weekday: "long", timeZone: "America/Bogota" }).format(when).toLowerCase();
+    const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: business.timezone }).format(when));
+    const day = new Intl.DateTimeFormat("es-CO", { weekday: "long", timeZone: business.timezone }).format(when).toLowerCase();
     byHour[hour] += 1;
     byDay.set(day, (byDay.get(day) ?? 0) + 1);
 

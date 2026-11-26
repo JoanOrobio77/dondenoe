@@ -8,7 +8,9 @@ const inputClass = "mt-1 w-full rounded-xl border border-brand-100 px-4 py-3 out
 
 export function LoginForm() {
   const [error, action, pending] = useActionState(signIn, null);
-  const notAdmin = useSearchParams().get("error") === "no-admin";
+  const errorCode = useSearchParams().get("error");
+  const notAdmin = errorCode === "no-admin";
+  const missingStore = errorCode === "negocio";
 
   return (
     <form action={action} className="space-y-4">
@@ -20,9 +22,9 @@ export function LoginForm() {
         Contraseña
         <input name="password" type="password" required autoComplete="current-password" className={inputClass} />
       </label>
-      {(error || notAdmin) && (
+      {(error || notAdmin || missingStore) && (
         <p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">
-          {error ?? "Esta cuenta no tiene permisos de administrador."}
+          {error ?? (missingStore ? "No encontramos la tienda de esta dirección." : "Esta cuenta no administra este negocio.")}
         </p>
       )}
       <button disabled={pending} className="w-full rounded-xl bg-brand-700 py-3 font-bold text-white disabled:opacity-60">

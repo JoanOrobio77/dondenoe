@@ -1,18 +1,28 @@
 "use client";
 
 import { useSyncExternalStore, useState } from "react";
-import { Wordmark } from "./wordmark";
+import { StoreBrand } from "./store-brand";
 
-const STORAGE_KEY = "dondenoe-adult";
+const storageKey = (slug: string) => `tienda-adult:${slug}`;
 
 function subscribe() {
   return () => {};
 }
 
-export function AgeGate() {
+export function AgeGate({
+  slug,
+  name,
+  logoUrl,
+  brandColor,
+}: {
+  slug: string;
+  name: string;
+  logoUrl: string | null;
+  brandColor: string;
+}) {
   const confirmedBefore = useSyncExternalStore(
     subscribe,
-    () => localStorage.getItem(STORAGE_KEY) === "1",
+    () => localStorage.getItem(storageKey(slug)) === "1",
     () => true,
   );
   const [answer, setAnswer] = useState<"adult" | "minor" | null>(null);
@@ -22,7 +32,7 @@ export function AgeGate() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-900/90 p-6">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
-        <Wordmark className="text-4xl" />
+        <StoreBrand name={name} slug={slug} logoUrl={logoUrl} brandColor={brandColor} className="text-4xl" />
         {answer === "minor" ? (
           <p className="mt-4 text-slate-600">
             Lo sentimos. La venta de licor y cigarrillo a menores de edad está prohibida en Colombia.
@@ -42,7 +52,7 @@ export function AgeGate() {
               </button>
               <button
                 onClick={() => {
-                  localStorage.setItem(STORAGE_KEY, "1");
+                  localStorage.setItem(storageKey(slug), "1");
                   setAnswer("adult");
                 }}
                 className="rounded-xl bg-brand-700 py-3 font-semibold text-white"

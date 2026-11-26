@@ -28,11 +28,16 @@ export async function signOut() {
 }
 
 export async function updateOrderStatus(formData: FormData) {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const orderId = String(formData.get("orderId"));
   const status = String(formData.get("status"));
 
-  const { data: order } = await supabase.from("orders").select("status").eq("id", orderId).single();
+  const { data: order } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("id", orderId)
+    .eq("business_id", business.id)
+    .single();
   const allowed: readonly string[] = NEXT_STATUS[order?.status as keyof typeof NEXT_STATUS] ?? [];
   if (!allowed.includes(status)) throw new Error("Cambio de estado no permitido");
 
@@ -40,14 +45,15 @@ export async function updateOrderStatus(formData: FormData) {
     .from("orders")
     .update({ status, ...(status === "entregado" && { age_verified_on_delivery: true }) })
     .eq("id", orderId)
+    .eq("business_id", business.id)
     .throwOnError();
 
-  if (status === "entregado") updateTag("catalog");
+  if (status === "entregado") updateTag(`catalog:${business.slug}`);
   refresh();
 }
 
 export async function registerMovement(formData: FormData) {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const quantity = Math.trunc(Number(formData.get("quantity")));
   const reason = String(formData.get("reason"));
   if (!quantity || !["entrada", "ajuste"].includes(reason)) return;
@@ -55,6 +61,7 @@ export async function registerMovement(formData: FormData) {
   await supabase
     .from("inventory_movements")
     .insert({
+      business_id: business.id,
       product_id: String(formData.get("productId")),
       quantity: reason === "entrada" ? Math.abs(quantity) : quantity,
       reason,
@@ -62,7 +69,7 @@ export async function registerMovement(formData: FormData) {
     })
     .throwOnError();
 
-  updateTag("catalog");
+  updateTag(`catalog:${business.slug}`);
   refresh();
 }
 
@@ -80,7 +87,7 @@ function bogotaTimestamp(value: FormDataEntryValue | null) {
 }
 
 export async function updateProduct(formData: FormData) {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const price = pesos(formData, "price");
   const cost = pesos(formData, "cost");
   const minStock = Math.trunc(Number(formData.get("minStock")));
@@ -102,12 +109,13 @@ export async function updateProduct(formData: FormData) {
     .eq("id", productId)
     .throwOnError();
   const { error: privateError } = await supabase.rpc("admin_set_product_private", {
-    p_id: productId,
-    p_cost: cost,
-    p_min_stock: minStock,
+    business_id: business.id,
+    product_id: productId,
+    cost,
+    min_stock: minStock,
   });
   if (privateError) throw new Error("No se pudo guardar el costo");
-  updateTag("catalog");
+  updateTag(`catalog:${business.slug}`);
   refresh();
 }
 
@@ -130,21 +138,22 @@ function photoMessage(message: string) {
 type PhotoResult = { ok: false; error: string } | { ok: true; url: string };
 
 async function saveProductPhoto(
-  supabase: Awaited<ReturnType<typeof requireAdmin>>,
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
+  businessId: string,
   productId: string,
   file: File,
 ): Promise<PhotoResult> {
   const ext = PHOTO_EXT[file.type];
   if (!ext) return { ok: false, error: "La foto debe ser JPG, PNG o WebP." };
   if (file.size > 2_097_152) return { ok: false, error: "La foto pesa más de 2 MB. Elige otra o toma una más pequeña." };
-  const path = `${productId}.${ext}`;
+  const path = `${businessId}/${productId}.${ext}`;
   const { error } = await supabase.storage.from("products").upload(path, file, {
     contentType: file.type,
     upsert: true,
   });
   if (error) return { ok: false, error: photoMessage(error.message) };
   await supabase.storage.from("products").remove(
-    ["jpg", "png", "webp"].filter((item) => item !== ext).map((item) => `${productId}.${item}`),
+    ["jpg", "png", "webp"].filter((item) => item !== ext).map((item) => `${businessId}/${productId}.${item}`),
   );
   const { data } = supabase.storage.from("products").getPublicUrl(path);
   return { ok: true, url: `${data.publicUrl}?v=${Date.now()}` };
@@ -192,27 +201,30 @@ function readNewProduct(formData: FormData): NewProductInput {
 }
 
 export async function createProduct(_prev: string | null | undefined, formData: FormData): Promise<string | null> {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const input = readNewProduct(formData);
   if (!input.ok) return input.error;
 
   const { data: created, error } = await supabase
     .from("products")
     .insert({
+      business_id: business.id,
       name: input.name,
       category_id: input.categoryId,
       description: input.description || null,
       price: input.price,
       stock: 0,
+      kind: "product",
     })
     .select("id")
     .single();
   if (error || !created) return "No se pudo crear el producto. Entra de nuevo al panel e inténtalo otra vez.";
 
   const { error: privateError } = await supabase.rpc("admin_set_product_private", {
-    p_id: created.id,
-    p_cost: input.cost,
-    p_min_stock: input.minStock,
+    business_id: business.id,
+    product_id: created.id,
+    cost: input.cost,
+    min_stock: input.minStock,
   });
   if (privateError) {
     await supabase.from("products").delete().eq("id", created.id);
@@ -220,12 +232,16 @@ export async function createProduct(_prev: string | null | undefined, formData: 
   }
 
   const discard = async () => {
-    await supabase.storage.from("products").remove([`${created.id}.jpg`, `${created.id}.png`, `${created.id}.webp`]);
+    await supabase.storage.from("products").remove([
+      `${business.id}/${created.id}.jpg`,
+      `${business.id}/${created.id}.png`,
+      `${business.id}/${created.id}.webp`,
+    ]);
     await supabase.from("products").delete().eq("id", created.id);
   };
 
   if (input.file) {
-    const uploaded = await saveProductPhoto(supabase, created.id, input.file);
+    const uploaded = await saveProductPhoto(supabase, business.id, created.id, input.file);
     if (!uploaded.ok) {
       await discard();
       return uploaded.error;
@@ -239,6 +255,7 @@ export async function createProduct(_prev: string | null | undefined, formData: 
 
   if (input.stock > 0) {
     const { error: moveError } = await supabase.from("inventory_movements").insert({
+      business_id: business.id,
       product_id: created.id,
       quantity: input.stock,
       reason: "entrada",
@@ -250,30 +267,30 @@ export async function createProduct(_prev: string | null | undefined, formData: 
     }
   }
 
-  updateTag("catalog");
+  updateTag(`catalog:${business.slug}`);
   refresh();
   return null;
 }
 
 export async function updateProductImage(_prev: string | null | undefined, formData: FormData): Promise<string | null> {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const productId = String(formData.get("productId") ?? "");
   const file = formData.get("image");
   if (!productId) return "No encontré el producto.";
   if (!(file instanceof File) || file.size === 0) return "Elige una foto.";
 
-  const uploaded = await saveProductPhoto(supabase, productId, file);
+  const uploaded = await saveProductPhoto(supabase, business.id, productId, file);
   if (!uploaded.ok) return uploaded.error;
 
   const { error } = await supabase.from("products").update({ image_url: uploaded.url }).eq("id", productId);
   if (error) return "No se pudo guardar la foto del producto.";
-  updateTag("catalog");
+  updateTag(`catalog:${business.slug}`);
   refresh();
   return null;
 }
 
 export async function updateZone(formData: FormData) {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const fee = pesos(formData, "fee");
   const name = String(formData.get("name") ?? "").trim();
   if (fee === null || !name) throw new Error("La zona necesita nombre y tarifa");
@@ -283,23 +300,23 @@ export async function updateZone(formData: FormData) {
     .update({ name, fee, active: formData.get("active") === "on" })
     .eq("id", Number(formData.get("zoneId")))
     .throwOnError();
-  updateTag("catalog");
+  updateTag(`catalog:${business.slug}`);
   refresh();
 }
 
 export async function createZone(formData: FormData) {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const fee = pesos(formData, "fee");
   const name = String(formData.get("name") ?? "").trim();
   if (fee === null || !name) throw new Error("La zona necesita nombre y tarifa");
 
-  await supabase.from("delivery_zones").insert({ name, fee }).throwOnError();
-  updateTag("catalog");
+  await supabase.from("delivery_zones").insert({ business_id: business.id, name, fee }).throwOnError();
+  updateTag(`catalog:${business.slug}`);
   refresh();
 }
 
 export async function savePromotion(formData: FormData) {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const title = String(formData.get("title") ?? "").trim();
   if (!title) throw new Error("La promoción necesita un título");
   const discount = formData.get("discount") ? Math.round(Number(formData.get("discount"))) : null;
@@ -308,23 +325,24 @@ export async function savePromotion(formData: FormData) {
   await supabase
     .from("promotions")
     .insert({
+      business_id: business.id,
       title,
       description: String(formData.get("description") ?? "").trim() || null,
       discount_percent: discount,
       ends_at: bogotaTimestamp(formData.get("endsAt")),
     })
     .throwOnError();
-  updateTag("promotions");
+  updateTag(`promotions:${business.slug}`);
   refresh();
 }
 
 export async function setPromotionActive(formData: FormData) {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   await supabase
     .from("promotions")
     .update({ active: formData.get("active") === "true" })
     .eq("id", String(formData.get("promotionId")))
     .throwOnError();
-  updateTag("promotions");
+  updateTag(`promotions:${business.slug}`);
   refresh();
 }

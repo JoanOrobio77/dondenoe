@@ -1,5 +1,6 @@
 "use server";
 
+import { resolveRequest, storeIsOpen } from "@/lib/store";
 import { createPublicClient, isSupabaseConfigured } from "@/lib/supabase/public";
 import type { CartItem } from "@/lib/types";
 import { PAYMENT_METHODS, type PaymentMethod } from "@/lib/whatsapp";
@@ -20,6 +21,9 @@ const SAFE_ORDER_ERRORS = new Set([
   "Un producto del pedido ya no está disponible",
   "Un combo del pedido ya no está disponible",
   "Ningún producto del pedido está disponible",
+  "Este negocio no está recibiendo pedidos",
+  "En este momento la tienda está cerrada",
+  "Este negocio no hace domicilios",
 ]);
 
 function orderErrorMessage(error: { message?: string } | null) {
@@ -54,7 +58,13 @@ export async function placeOrder(_prev: PlaceOrderState, formData: FormData): Pr
     return { status: "error", message: "No pudimos leer tu pedido. Recarga la página." };
   }
 
-  if (!ageConfirmed) return { status: "error", message: "Debes confirmar que eres mayor de 18 años." };
+  const { store } = await resolveRequest();
+  if (!store || !storeIsOpen(store.status)) {
+    return { status: "error", message: "Este negocio no está recibiendo pedidos" };
+  }
+  if (store.ageVerification && !ageConfirmed) {
+    return { status: "error", message: "Debes confirmar que eres mayor de 18 años." };
+  }
   if (name.length < 1 || name.length > 80) {
     return { status: "error", message: "El nombre debe tener entre 1 y 80 caracteres" };
   }
@@ -63,7 +73,8 @@ export async function placeOrder(_prev: PlaceOrderState, formData: FormData): Pr
     return { status: "error", message: "La dirección debe tener entre 1 y 200 caracteres" };
   }
   if (notes.length > 300) return { status: "error", message: "Las notas no pueden pasar de 300 caracteres" };
-  if (!zoneId) return { status: "error", message: "Zona de domicilio no válida" };
+  if (store.delivery && !zoneId) return { status: "error", message: "Zona de domicilio no válida" };
+  if (!store.delivery && zoneId) return { status: "error", message: "Este negocio no hace domicilios" };
   if (!(payment in PAYMENT_METHODS)) return { status: "error", message: "Elige una forma de pago." };
   if (rawItems.length === 0) return { status: "error", message: "El pedido está vacío" };
   if (rawItems.length > 30) return { status: "error", message: "El pedido no puede tener más de 30 líneas" };
@@ -85,32 +96,21 @@ export async function placeOrder(_prev: PlaceOrderState, formData: FormData): Pr
   }
 
   const payload = {
+    p_business_id: store.id,
     p_name: name,
     p_phone: phone,
     p_address: address,
-    p_zone_id: zoneId,
+    p_zone_id: store.delivery ? zoneId : null,
     p_payment: payment,
-    p_age_confirmed: true,
+    p_age_confirmed: store.ageVerification ? true : ageConfirmed,
     p_items: items.map((i) => ({ type: i.type, id: i.id, quantity: i.quantity })),
     p_notes: notes || null,
     p_accepts_marketing: acceptsMarketing,
   };
   const supabase = createPublicClient();
-  let { data, error } = await supabase.rpc("create_order", payload).single<{ order_number: number; order_total: number }>();
-  if (error && /schema cache|PGRST202/i.test(error.message)) {
-    ({ data, error } = await supabase
-      .rpc("create_order", {
-        p_name: payload.p_name,
-        p_phone: payload.p_phone,
-        p_address: payload.p_address,
-        p_zone_id: payload.p_zone_id,
-        p_payment: payload.p_payment,
-        p_age_confirmed: payload.p_age_confirmed,
-        p_items: payload.p_items,
-        p_notes: payload.p_notes,
-      })
-      .single<{ order_number: number; order_total: number }>());
-  }
+  const { data, error } = await supabase
+    .rpc("create_order", payload)
+    .single<{ order_number: number; order_total: number }>();
 
   if (error || !data) return { status: "error", message: orderErrorMessage(error) };
   return { status: "ok", number: data.order_number, total: data.order_total };

@@ -37,12 +37,13 @@ export default function OrdersPage() {
 }
 
 async function Orders() {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const { data: orders } = await supabase
     .from("orders")
     .select(
       "id, number, status, customer_name, address, subtotal, delivery_fee, total, payment_method, notes, created_at, customers(name, phone), delivery_zones(name), order_items(name, quantity, unit_price)",
     )
+    .eq("business_id", business.id)
     .order("created_at", { ascending: false })
     .limit(50)
     .throwOnError();

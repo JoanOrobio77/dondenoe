@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DondeNoe · Licores y domicilios",
+  title: "Tienda",
   description: "Pide licores, cervezas, hielo y combos a domicilio por WhatsApp. Solo mayores de 18 años.",
 };
 

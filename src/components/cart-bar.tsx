@@ -5,8 +5,8 @@ import { useState } from "react";
 import { changeQuantity, clearCart, useCart } from "@/lib/cart-store";
 import { formatCOP } from "@/lib/format";
 
-export function CartBar() {
-  const items = useCart();
+export function CartBar({ slug }: { slug: string }) {
+  const items = useCart(slug);
   const [open, setOpen] = useState(false);
 
   const count = items.reduce((sum, i) => sum + i.quantity, 0);
@@ -22,7 +22,7 @@ export function CartBar() {
           <div className="max-h-[60vh] overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-brand-900">Tu pedido</h2>
-              <button onClick={clearCart} className="text-sm text-slate-500 underline">
+              <button onClick={() => clearCart(slug)} className="text-sm text-slate-500 underline">
                 Vaciar
               </button>
             </div>
@@ -34,9 +34,9 @@ export function CartBar() {
                     <p className="text-sm text-slate-500">{formatCOP(item.price * item.quantity)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
-                    <QuantityButton label="−" onClick={() => changeQuantity(item.type, item.id, -1)} />
+                    <QuantityButton label="−" onClick={() => changeQuantity(slug, item.type, item.id, -1)} />
                     <span className="w-5 text-center font-bold">{item.quantity}</span>
-                    <QuantityButton label="+" onClick={() => changeQuantity(item.type, item.id, 1)} />
+                    <QuantityButton label="+" onClick={() => changeQuantity(slug, item.type, item.id, 1)} />
                   </div>
                 </li>
               ))}

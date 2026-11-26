@@ -15,10 +15,11 @@ export default function PromotionsPage() {
 }
 
 async function Promotions() {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const { data: promotions } = await supabase
     .from("promotions")
     .select("id, title, description, discount_percent, ends_at, active")
+    .eq("business_id", business.id)
     .order("starts_at", { ascending: false })
     .throwOnError();
 

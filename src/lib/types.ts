@@ -13,6 +13,7 @@ export type Product = {
   price: number;
   stock: number;
   imageUrl: string | null;
+  kind?: "product" | "service";
 };
 
 export type Combo = {
@@ -35,7 +36,29 @@ export type AdminProductRow = {
   min_stock: number;
   image_url: string | null;
   active: boolean;
+  kind: "product" | "service";
+  duration_minutes: number | null;
   created_at: string;
+};
+
+export type StoreStatus = "trial" | "active" | "past_due" | "suspended";
+export type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+export type DayHours = { open: string; close: string };
+export type OpeningHours = Partial<Record<DayKey, DayHours | null>>;
+
+export type Store = {
+  id: string;
+  slug: string;
+  name: string;
+  logoUrl: string | null;
+  brandColor: string;
+  whatsapp: string | null;
+  timezone: string;
+  status: StoreStatus;
+  ageVerification: boolean;
+  tobaccoRules: boolean;
+  delivery: boolean;
+  openingHours: OpeningHours;
 };
 
 export type DeliveryZone = {

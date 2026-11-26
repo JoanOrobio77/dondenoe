@@ -14,14 +14,15 @@ export default function CustomersPage() {
 }
 
 async function Customers() {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const [{ data: customers }, { data: promotions }] = await Promise.all([
     supabase
       .from("customers")
       .select("id, name, phone, address, accepts_marketing, orders(total, status, created_at)")
+      .eq("business_id", business.id)
       .order("created_at", { ascending: false })
       .throwOnError(),
-    supabase.from("promotions").select("title").eq("active", true).order("starts_at", { ascending: false }).limit(1).throwOnError(),
+    supabase.from("promotions").select("title").eq("business_id", business.id).eq("active", true).order("starts_at", { ascending: false }).limit(1).throwOnError(),
   ]);
 
   const promo = promotions[0];
@@ -65,13 +66,13 @@ async function Customers() {
               {customer.last && (
                 <>
                   {" "}
-                  · último {new Date(customer.last).toLocaleDateString("es-CO", { timeZone: "America/Bogota" })}
+                  · último {new Date(customer.last).toLocaleDateString("es-CO", { timeZone: business.timezone })}
                 </>
               )}
             </p>
             <a
               href={whatsappLink(
-                reminderMessage(customer.name, customer.accepts_marketing ? promo?.title : undefined),
+                reminderMessage(customer.name, business.name, customer.accepts_marketing ? promo?.title : undefined),
                 customer.phone,
               )}
               target="_blank"

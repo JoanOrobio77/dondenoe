@@ -17,10 +17,10 @@ export default function ProductsPage() {
 }
 
 async function Products() {
-  const supabase = await requireAdmin();
+  const { supabase, business } = await requireAdmin();
   const [{ data }, { data: categories }] = await Promise.all([
-    supabase.rpc("admin_list_products").throwOnError(),
-    supabase.from("categories").select("id, name").order("sort_order").throwOnError(),
+    supabase.rpc("admin_list_products", { business_id: business.id }).throwOnError(),
+    supabase.from("categories").select("id, name").eq("business_id", business.id).order("sort_order").throwOnError(),
   ]);
   const products = (data ?? []) as AdminProductRow[];
 

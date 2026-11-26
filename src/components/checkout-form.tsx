@@ -10,8 +10,22 @@ import { buildOrderMessage, PAYMENT_METHODS, whatsappLink, type PaymentMethod } 
 
 const inputClass = "mt-1 w-full rounded-xl border border-brand-100 bg-white px-4 py-3 outline-brand-700";
 
-export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
-  const items = useCart();
+export function CheckoutForm({
+  zones,
+  slug,
+  storeName,
+  whatsapp,
+  ageVerification,
+  delivery,
+}: {
+  zones: DeliveryZone[];
+  slug: string;
+  storeName: string;
+  whatsapp: string | null;
+  ageVerification: boolean;
+  delivery: boolean;
+}) {
+  const items = useCart(slug);
   const [zoneId, setZoneId] = useState(zones[0]?.id ?? 0);
   const [sentMessage, setSentMessage] = useState("");
   const zone = zones.find((z) => z.id === zoneId);
@@ -26,19 +40,19 @@ export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
           total: result.total,
           name: String(formData.get("name")).trim(),
           address: String(formData.get("address")).trim(),
-          zoneName: zone?.name ?? "",
-          deliveryFee: zone?.fee ?? 0,
+          zoneName: delivery ? (zone?.name ?? "") : "Sin domicilio",
+          deliveryFee: delivery ? (zone?.fee ?? 0) : 0,
           payment: String(formData.get("payment")) as PaymentMethod,
           notes: String(formData.get("notes") ?? "").trim(),
-        }),
+        }, storeName),
       );
-      clearCart();
+      clearCart(slug);
     }
     return result;
   }, { status: "idle" });
 
   if (state.status === "ok") {
-    return <OrderSent number={state.number} message={sentMessage} />;
+    return <OrderSent number={state.number} message={sentMessage} whatsapp={whatsapp} />;
   }
 
   if (items.length === 0) {
@@ -73,19 +87,21 @@ export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
             <span>Subtotal</span>
             <span>{formatCOP(subtotal)}</span>
           </p>
-          <p className="flex justify-between">
-            <span>Domicilio</span>
-            <span>{formatCOP(zone?.fee ?? 0)}</span>
-          </p>
+          {delivery && (
+            <p className="flex justify-between">
+              <span>Domicilio</span>
+              <span>{formatCOP(zone?.fee ?? 0)}</span>
+            </p>
+          )}
           <p className="flex justify-between text-lg font-bold text-brand-900">
             <span>Total</span>
-            <span>{formatCOP(subtotal + (zone?.fee ?? 0))}</span>
+            <span>{formatCOP(subtotal + (delivery ? (zone?.fee ?? 0) : 0))}</span>
           </p>
         </div>
       </section>
 
       <section className="space-y-4 rounded-2xl bg-white p-4 ring-1 ring-brand-100">
-        <h2 className="font-bold text-brand-900">¿A dónde lo llevamos?</h2>
+        <h2 className="font-bold text-brand-900">{delivery ? "¿A dónde lo llevamos?" : "¿Quién recibe?"}</h2>
         <label className="block text-sm font-semibold text-slate-700">
           Nombre
           <input name="name" required maxLength={80} autoComplete="name" className={inputClass} />
@@ -94,16 +110,18 @@ export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
           Celular
           <input name="phone" required type="tel" inputMode="numeric" autoComplete="tel" placeholder="3001234567" className={inputClass} />
         </label>
-        <label className="block text-sm font-semibold text-slate-700">
-          Zona
-          <select name="zoneId" value={zoneId} onChange={(e) => setZoneId(Number(e.target.value))} className={inputClass}>
-            {zones.map((z) => (
-              <option key={z.id} value={z.id}>
-                {z.name} · {formatCOP(z.fee)}
-              </option>
-            ))}
-          </select>
-        </label>
+        {delivery && (
+          <label className="block text-sm font-semibold text-slate-700">
+            Zona
+            <select name="zoneId" value={zoneId} onChange={(e) => setZoneId(Number(e.target.value))} className={inputClass}>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.name} · {formatCOP(z.fee)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="block text-sm font-semibold text-slate-700">
           Dirección
           <input name="address" required maxLength={200} autoComplete="street-address" placeholder="Calle, número, barrio, apto" className={inputClass} />
@@ -130,12 +148,14 @@ export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
         <span>Quiero que me avisen por WhatsApp de promociones de fin de semana y quincena.</span>
       </label>
 
-      <label className="flex items-start gap-3 rounded-2xl bg-accent/20 p-4 text-sm text-brand-900">
-        <input type="checkbox" name="ageConfirmed" required className="mt-0.5 size-5" />
-        <span>
-          Confirmo que soy <strong>mayor de 18 años</strong> y presentaré mi documento al recibir el pedido.
-        </span>
-      </label>
+      {ageVerification && (
+        <label className="flex items-start gap-3 rounded-2xl bg-accent/20 p-4 text-sm text-brand-900">
+          <input type="checkbox" name="ageConfirmed" required className="mt-0.5 size-5" />
+          <span>
+            Confirmo que soy <strong>mayor de 18 años</strong> y presentaré mi documento al recibir el pedido.
+          </span>
+        </label>
+      )}
 
       {state.status === "error" && (
         <p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">{state.message}</p>
@@ -148,20 +168,22 @@ export function CheckoutForm({ zones }: { zones: DeliveryZone[] }) {
   );
 }
 
-function OrderSent({ number, message }: { number: number; message: string }) {
+function OrderSent({ number, message, whatsapp }: { number: number; message: string; whatsapp: string | null }) {
   return (
     <div className="rounded-2xl bg-white p-6 text-center ring-1 ring-brand-100">
       <p className="text-4xl">✅</p>
       <h2 className="mt-2 text-xl font-bold text-brand-900">Pedido #{number} registrado</h2>
       <p className="mt-2 text-slate-600">Último paso: envíanos el pedido por WhatsApp para confirmarlo.</p>
-      <a
-        href={whatsappLink(message)}
-        target="_blank"
-        rel="noopener"
-        className="mt-5 block rounded-xl bg-[#25D366] py-4 text-lg font-bold text-white"
-      >
-        Enviar por WhatsApp
-      </a>
+      {whatsapp && (
+        <a
+          href={whatsappLink(message, whatsapp)}
+          target="_blank"
+          rel="noopener"
+          className="mt-5 block rounded-xl bg-[#25D366] py-4 text-lg font-bold text-white"
+        >
+          Enviar por WhatsApp
+        </a>
+      )}
       <Link href="/" className="mt-4 inline-block text-sm text-brand-700 underline">
         Volver al catálogo
       </Link>

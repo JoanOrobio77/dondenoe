@@ -15,8 +15,13 @@ export default function ZonesPage() {
 }
 
 async function Zones() {
-  const supabase = await requireAdmin();
-  const { data: zones } = await supabase.from("delivery_zones").select("id, name, fee, active").order("fee").throwOnError();
+  const { supabase, business } = await requireAdmin();
+  const { data: zones } = await supabase
+    .from("delivery_zones")
+    .select("id, name, fee, active")
+    .eq("business_id", business.id)
+    .order("fee")
+    .throwOnError();
 
   return (
     <div className="space-y-6">

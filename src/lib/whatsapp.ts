@@ -21,10 +21,10 @@ export type OrderSummary = {
   notes: string;
 };
 
-export function buildOrderMessage(items: CartItem[], order: OrderSummary) {
+export function buildOrderMessage(items: CartItem[], order: OrderSummary, storeName: string) {
   const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   return [
-    `Hola DondeNoe, este es mi pedido #${order.number}:`,
+    `Hola ${storeName}, este es mi pedido #${order.number}:`,
     "",
     ...items.map((i) => `• ${i.quantity} x ${i.name} — ${formatCOP(i.price * i.quantity)}`),
     "",
@@ -45,9 +45,9 @@ export function whatsappLink(message: string, phone = process.env.NEXT_PUBLIC_WH
   return `https://wa.me/${full}?text=${encodeURIComponent(message)}`;
 }
 
-export function reminderMessage(name: string, promotion?: string) {
+export function reminderMessage(name: string, storeName: string, promotion?: string) {
   const offer = promotion
     ? `Tenemos esta promoción: ${promotion}. ¿Te armamos el pedido?`
     : "¿Te armamos el pedido para este fin de semana?";
-  return `Hola ${name}, te escribe DondeNoe. ${offer}`;
+  return `Hola ${name}, te escribe ${storeName}. ${offer}`;
 }

@@ -8,7 +8,7 @@ import type { Catalog, CartItem } from "@/lib/types";
 
 const ALL = "todo";
 
-export function CatalogView({ catalog }: { catalog: Catalog }) {
+export function CatalogView({ catalog, slug }: { catalog: Catalog; slug: string }) {
   const [selected, setSelected] = useState(ALL);
   const visibleCategories = catalog.categories.filter((c) => selected === ALL || c.slug === selected);
 
@@ -40,7 +40,7 @@ export function CatalogView({ catalog }: { catalog: Catalog }) {
                       {savings > 0 && <p className="text-xs text-white/50 line-through">{formatCOP(combo.regularPrice)}</p>}
                       <p className="text-xl font-bold text-accent">{formatCOP(combo.price)}</p>
                     </div>
-                    <AddButton item={{ type: "combo", id: combo.id, name: combo.name, price: combo.price }} />
+                    <AddButton slug={slug} item={{ type: "combo", id: combo.id, name: combo.name, price: combo.price }} />
                   </div>
                 </article>
               );
@@ -78,8 +78,9 @@ export function CatalogView({ catalog }: { catalog: Catalog }) {
                     {product.description && <p className="text-sm text-slate-500">{product.description}</p>}
                     <p className="mt-1 font-bold text-brand-700">{formatCOP(product.price)}</p>
                   </div>
-                  {product.stock > 0 ? (
+                  {product.kind === "service" || product.stock > 0 ? (
                     <AddButton
+                      slug={slug}
                       item={{ type: "product", id: product.id, name: product.name, price: product.price }}
                     />
                   ) : (
@@ -103,10 +104,10 @@ function ProductPhoto({ name, imageUrl }: { name: string; imageUrl: string | nul
   );
 }
 
-function AddButton({ item }: { item: Omit<CartItem, "quantity"> }) {
+function AddButton({ slug, item }: { slug: string; item: Omit<CartItem, "quantity"> }) {
   return (
     <button
-      onClick={() => addToCart(item)}
+      onClick={() => addToCart(slug, item)}
       className="shrink-0 rounded-xl bg-accent px-4 py-2 font-bold text-brand-900 active:scale-95"
     >
       Agregar
