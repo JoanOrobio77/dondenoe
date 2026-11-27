@@ -1221,5 +1221,127 @@ begin
   if v_cost is not null then raise exception 'FALLO: el empleado pudo ver el costo de la importación'; end if;
 end $$;
 
+-- Límite de lecturas con IA. El cupo del día empieza en cero; una reserva vieja no cuenta.
+reset role;
+delete from ai_usage where business_id = '11111111-1111-1111-1111-111111111111';
+insert into ai_usage (business_id, used_on, units, status, created_at)
+values (
+  '11111111-1111-1111-1111-111111111111',
+  (timezone('America/Bogota', now()))::date,
+  5,
+  'reservada',
+  now() - interval '1 hour'
+);
+update platform_settings
+set value = '{"basico":2,"completo":2}'::jsonb
+where key = 'ai_daily_reads';
+
+reset role;
+create temp table ai_probe (id uuid);
+grant all on ai_probe to authenticated;
+
+select set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', true);
+set local role authenticated;
+
+do $$
+declare
+  v_first uuid;
+  v_second uuid;
+begin
+  v_first := reserve_ai_read('11111111-1111-1111-1111-111111111111', 1);
+  v_second := reserve_ai_read('11111111-1111-1111-1111-111111111111', 1);
+  if v_first is null or v_second is null then
+    raise exception 'FALLO: una reserva dentro del límite no se creó';
+  end if;
+  insert into ai_probe values (v_first);
+  begin
+    perform reserve_ai_read('11111111-1111-1111-1111-111111111111', 1);
+    raise exception 'FALLO: la tercera reserva pasó el límite';
+  exception
+    when others then
+      if sqlerrm like 'FALLO:%' then raise; end if;
+      if sqlerrm not like '%límite de lecturas con IA de hoy%' then
+        raise exception 'FALLO inesperado al reservar: %', sqlerrm;
+      end if;
+  end;
+  begin
+    perform record_ai_usage('11111111-1111-1111-1111-111111111111', 1);
+    raise exception 'FALLO: record_ai_usage sigue abierto';
+  exception
+    when insufficient_privilege then null;
+    when others then
+      if sqlerrm like 'FALLO:%' then raise; end if;
+      if sqlerrm not like '%permission denied%' and sqlerrm not like '%reservada antes%' then
+        raise exception 'FALLO inesperado al registrar uso directo: %', sqlerrm;
+      end if;
+  end;
+end $$;
+
+reset role;
+select set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2', true);
+set local role authenticated;
+
+do $$
+declare
+  v_id uuid;
+begin
+  select id into v_id from ai_probe;
+  begin
+    perform settle_ai_read(v_id, 1);
+    raise exception 'FALLO: el negocio B liquidó una reserva de A';
+  exception
+    when others then
+      if sqlerrm like 'FALLO:%' then raise; end if;
+      if sqlerrm not like '%No autorizado%' then
+        raise exception 'FALLO inesperado al liquidar otra reserva: %', sqlerrm;
+      end if;
+  end;
+  begin
+    perform release_ai_read(v_id);
+    raise exception 'FALLO: el negocio B liberó una reserva de A';
+  exception
+    when others then
+      if sqlerrm like 'FALLO:%' then raise; end if;
+      if sqlerrm not like '%No autorizado%' then
+        raise exception 'FALLO inesperado al liberar otra reserva: %', sqlerrm;
+      end if;
+  end;
+end $$;
+
+reset role;
+select set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', true);
+set local role authenticated;
+
+do $$
+declare
+  v_id uuid;
+  v_units int;
+begin
+  select id into v_id from ai_probe;
+  perform settle_ai_read(v_id, 1);
+  select units into v_units from ai_usage where id = v_id;
+  if v_units <> 1 then raise exception 'FALLO: la liquidación no guardó las unidades reales'; end if;
+  begin
+    perform release_ai_read(v_id);
+    raise exception 'FALLO: se liberó una lectura ya registrada';
+  exception
+    when others then
+      if sqlerrm like 'FALLO:%' then raise; end if;
+      if sqlerrm not like '%No autorizado%' then
+        raise exception 'FALLO inesperado al bajar el uso: %', sqlerrm;
+      end if;
+  end;
+  begin
+    perform settle_ai_read(v_id, 1);
+    raise exception 'FALLO: se volvió a liquidar una lectura ya registrada';
+  exception
+    when others then
+      if sqlerrm like 'FALLO:%' then raise; end if;
+      if sqlerrm not like '%ya no está vigente%' then
+        raise exception 'FALLO inesperado al repetir la liquidación: %', sqlerrm;
+      end if;
+  end;
+end $$;
+
 do $$ begin raise notice 'AISLAMIENTO_OK'; end $$;
 rollback;

@@ -118,6 +118,9 @@ revoke all on function confirm_catalog_import(uuid, jsonb) from public, anon, au
 revoke all on function ai_daily_limit(uuid) from public, anon, authenticated;
 revoke all on function ai_reads_today(uuid) from public, anon, authenticated;
 revoke all on function record_ai_usage(uuid, int) from public, anon, authenticated;
+revoke all on function reserve_ai_read(uuid, int) from public, anon, authenticated;
+revoke all on function settle_ai_read(uuid, int) from public, anon, authenticated;
+revoke all on function release_ai_read(uuid) from public, anon, authenticated;
 revoke all on function platform_ai_usage() from public, anon, authenticated;
 revoke all on function purge_expired_imports() from public, anon, authenticated;
 revoke all on function strip_import_costs() from public, anon, authenticated;
@@ -125,7 +128,8 @@ grant execute on function search_master_products(text, text, boolean) to authent
 grant execute on function match_catalog_lines(uuid, jsonb) to authenticated;
 grant execute on function add_products_from_master(uuid, jsonb) to authenticated;
 grant execute on function confirm_catalog_import(uuid, jsonb) to authenticated;
-grant execute on function ai_daily_limit(uuid), ai_reads_today(uuid), record_ai_usage(uuid, int) to authenticated;
+grant execute on function ai_daily_limit(uuid), ai_reads_today(uuid) to authenticated;
+grant execute on function reserve_ai_read(uuid, int), settle_ai_read(uuid, int), release_ai_read(uuid) to authenticated;
 grant execute on function platform_ai_usage() to authenticated;
 grant execute on function strip_import_costs() to authenticated;
 

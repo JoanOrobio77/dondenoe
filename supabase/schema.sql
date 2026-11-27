@@ -2,7 +2,7 @@
 -- Instalación nueva, en este orden: schema.sql, grants.sql, seed.sql.
 -- Si la base ya existe, no corras este archivo.
 -- Una tienda de un solo negocio: 005, luego 006, 007, 008 y 009.
--- Una base que ya tiene 008: solo migrations/009_catalogo_ia.sql.
+-- Una base que ya tiene 009: solo migrations/010_correcciones_importacion.sql.
 -- pg_trgm: si CREATE EXTENSION falla en Supabase, actívala en Database → Extensions.
 
 create extension if not exists pgcrypto;
@@ -316,6 +316,7 @@ create table ai_usage (
   used_on date not null,
   units int not null check (units > 0 and units <= 20),
   estimated_cost numeric(12, 4) check (estimated_cost is null or estimated_cost >= 0),
+  status text not null default 'confirmada' check (status in ('reservada', 'confirmada', 'liberada')),
   created_at timestamptz not null default now()
 );
 
@@ -2013,30 +2014,112 @@ language sql stable security definer set search_path = public as $$
   join businesses b on b.id = u.business_id
   where u.business_id = p_business_id
     and u.used_on = (timezone(coalesce(nullif(b.timezone, ''), 'America/Bogota'), now()))::date
+    and (
+      u.status = 'confirmada'
+      or (u.status = 'reservada' and u.created_at > now() - interval '15 minutes')
+    )
     and (public.is_member(p_business_id) or public.is_platform_admin());
 $$;
 
 create function record_ai_usage(p_business_id uuid, p_units int) returns void
 language plpgsql security definer set search_path = public as $$
+begin
+  raise exception 'La lectura se reserva antes de llamar a la IA';
+end $$;
+
+create function reserve_ai_read(p_business_id uuid, p_units int) returns uuid
+language plpgsql security definer set search_path = public as $$
 declare
   v_today date;
   v_used int;
+  v_id uuid;
 begin
   if not public.is_member(p_business_id) then
     raise exception 'No autorizado';
   end if;
   if p_units is null or p_units < 1 or p_units > 5 then
-    raise exception 'No se pudo registrar la lectura';
+    raise exception 'No se pudo reservar la lectura';
   end if;
+  perform pg_advisory_xact_lock(hashtextextended('ai-read:' || p_business_id::text, 0));
+  perform 1 from businesses where id = p_business_id for update;
   select (timezone(coalesce(nullif(b.timezone, ''), 'America/Bogota'), now()))::date
     into v_today
   from businesses b where b.id = p_business_id;
   select coalesce(sum(units), 0) into v_used
-  from ai_usage where business_id = p_business_id and used_on = v_today;
+  from ai_usage
+  where business_id = p_business_id
+    and used_on = v_today
+    and (
+      status = 'confirmada'
+      or (status = 'reservada' and created_at > now() - interval '15 minutes')
+    );
   if v_used + p_units > public.ai_daily_limit(p_business_id) then
     raise exception 'Llegaste al límite de lecturas con IA de hoy';
   end if;
-  insert into ai_usage (business_id, used_on, units) values (p_business_id, v_today, p_units);
+  insert into ai_usage (business_id, used_on, units, status)
+  values (p_business_id, v_today, p_units, 'reservada')
+  returning id into v_id;
+  return v_id;
+end $$;
+
+create function settle_ai_read(p_reservation uuid, p_units int) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_business uuid;
+  v_status text;
+  v_created timestamptz;
+  v_units int;
+  v_today date;
+  v_used int;
+begin
+  if p_units is null or p_units < 1 or p_units > 5 then
+    raise exception 'No se pudo registrar la lectura';
+  end if;
+  select business_id, status, created_at, units, used_on
+    into v_business, v_status, v_created, v_units, v_today
+  from ai_usage where id = p_reservation for update;
+  if v_business is null or not public.is_member(v_business) then
+    raise exception 'No autorizado';
+  end if;
+  if v_status <> 'reservada' or v_created <= now() - interval '15 minutes' then
+    raise exception 'Esa reserva ya no está vigente';
+  end if;
+  if p_units > v_units then
+    perform pg_advisory_xact_lock(hashtextextended('ai-read:' || v_business::text, 0));
+    select coalesce(sum(units), 0) into v_used
+    from ai_usage
+    where business_id = v_business
+      and used_on = v_today
+      and id <> p_reservation
+      and (
+        status = 'confirmada'
+        or (status = 'reservada' and created_at > now() - interval '15 minutes')
+      );
+    if v_used + p_units > public.ai_daily_limit(v_business) then
+      raise exception 'Llegaste al límite de lecturas con IA de hoy';
+    end if;
+  end if;
+  update ai_usage set units = p_units, status = 'confirmada' where id = p_reservation;
+end $$;
+
+create function release_ai_read(p_reservation uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_business uuid;
+  v_status text;
+begin
+  select business_id, status into v_business, v_status
+  from ai_usage where id = p_reservation for update;
+  if v_business is null or not public.is_member(v_business) then
+    raise exception 'No autorizado';
+  end if;
+  if v_status = 'confirmada' then
+    raise exception 'No autorizado';
+  end if;
+  if v_status <> 'reservada' then
+    return;
+  end if;
+  update ai_usage set status = 'liberada' where id = p_reservation;
 end $$;
 
 create function platform_ai_usage()
@@ -2046,6 +2129,7 @@ language sql stable security definer set search_path = public as $$
   from businesses b
   left join ai_usage u
     on u.business_id = b.id
+   and u.status = 'confirmada'
    and u.used_on >= (timezone('America/Bogota', now()))::date - 30
   where public.is_platform_admin()
   group by b.id, b.name

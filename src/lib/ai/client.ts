@@ -7,6 +7,16 @@ export function aiConfigured() {
   return Boolean(process.env.AI_API_KEY && process.env.AI_PROVIDER && process.env.AI_MODEL);
 }
 
+export class AiCallError extends Error {
+  calls: number;
+
+  constructor(message: string, calls: number) {
+    super(message);
+    this.name = "AiCallError";
+    this.calls = calls;
+  }
+}
+
 function unsupported() {
   throw new Error("El proveedor de IA no está soportado. Usa openai o anthropic.");
 }
@@ -101,12 +111,25 @@ export async function extractPriceLines(file: { bytes: Uint8Array; mime: string 
   const model = process.env.AI_MODEL ?? "";
   const key = process.env.AI_API_KEY ?? "";
   let calls = 0;
-  const document = await acceptAiDocument(async () => {
-    calls += 1;
-    const prompt = calls === 1 ? PRICE_LIST_PROMPT : `${PRICE_LIST_PROMPT} La respuesta anterior no era JSON válido. Devuelve solo el JSON.`;
-    if (provider === "openai") return openAi(key, model, file, prompt);
-    if (provider === "anthropic") return anthropic(key, model, file, prompt);
-    unsupported();
-  });
-  return { document, calls };
+  try {
+    const document = await acceptAiDocument(async () => {
+      const prompt = calls === 0 ? PRICE_LIST_PROMPT : `${PRICE_LIST_PROMPT} La respuesta anterior no era JSON válido. Devuelve solo el JSON.`;
+      if (provider === "openai") {
+        calls += 1;
+        return openAi(key, model, file, prompt);
+      }
+      if (provider === "anthropic") {
+        calls += 1;
+        return anthropic(key, model, file, prompt);
+      }
+      unsupported();
+    });
+    return { document, calls };
+  } catch (error) {
+    if (calls > 0) {
+      const message = error instanceof Error ? error.message : "No se pudo leer el documento.";
+      throw new AiCallError(message, calls);
+    }
+    throw error;
+  }
 }

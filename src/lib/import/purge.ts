@@ -41,7 +41,7 @@ export async function handlePurgeRequest(
   }
 }
 
-async function removeBatch(cleaner: ImportCleaner, jobs: ExpiredImport[], errors: PurgeResult["errors"]) {
+async function removeBatch(cleaner: ImportCleaner, jobs: ExpiredImport[], errors: PurgeResult["errors"]): Promise<string[]> {
   if (jobs.length === 0) return [] as string[];
   const result = await cleaner.remove(jobs.map((job) => job.file_path));
   if (result.error && jobs.length > 1) {

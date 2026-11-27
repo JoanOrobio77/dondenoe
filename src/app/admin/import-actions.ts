@@ -1,9 +1,9 @@
 "use server";
 
 import { refresh, updateTag } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
-import { aiConfigured, extractPriceLines } from "@/lib/ai/client";
+import { AiCallError, aiConfigured, extractPriceLines } from "@/lib/ai/client";
 import { applyColumnMap, parseCsv, parseXlsx } from "@/lib/import/csv";
 import { detectImport } from "@/lib/import/files";
 import { chooseSuggestion } from "@/lib/import/match";
@@ -101,15 +101,6 @@ export async function startImport(formData: FormData) {
   if ((detected.kind === "image" || detected.kind === "pdf") && !aiConfigured()) {
     fail("/admin/importar", "La lectura con IA no está configurada. Puedes importar un Excel o un CSV.");
   }
-  if (detected.kind === "image" || detected.kind === "pdf") {
-    const [{ data: used }, { data: limit }] = await Promise.all([
-      supabase.rpc("ai_reads_today", { p_business_id: business.id }),
-      supabase.rpc("ai_daily_limit", { p_business_id: business.id }),
-    ]);
-    if (Number(used ?? 0) >= Number(limit ?? 10)) {
-      fail("/admin/importar", "Llegaste al límite de lecturas con IA de hoy.");
-    }
-  }
 
   const userId = (await supabase.auth.getUser()).data.user?.id;
   if (!userId) fail("/admin/importar", "Entra de nuevo al panel.");
@@ -151,9 +142,20 @@ export async function startImport(formData: FormData) {
     redirect(`/admin/importar/${id}`);
   }
 
+  let reservation: string | null = null;
+  let consumed = 0;
+  let failure: string | null = null;
   try {
+    const reserved = await supabase.rpc("reserve_ai_read", { p_business_id: business.id, p_units: 2 });
+    if (reserved.error || !reserved.data) {
+      throw new Error(reserved.error?.message.replace(/^ERROR:\s*/i, "") || "Llegaste al límite de lecturas con IA de hoy.");
+    }
+    reservation = reserved.data;
     const extracted = await extractPriceLines({ bytes, mime: detected.mime });
-    await supabase.rpc("record_ai_usage", { p_business_id: business.id, p_units: extracted.calls });
+    consumed = extracted.calls;
+    const settled = await supabase.rpc("settle_ai_read", { p_reservation: reservation, p_units: consumed });
+    if (settled.error) throw new Error(settled.error.message.replace(/^ERROR:\s*/i, ""));
+    reservation = null;
     const lineas = await enrich(
       supabase,
       business.id,
@@ -163,9 +165,18 @@ export async function startImport(formData: FormData) {
     );
     await supabase.from("import_jobs").update({ result: { lineas } }).eq("id", id);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo leer el documento.";
+    unstable_rethrow(error);
+    if (error instanceof AiCallError) consumed = error.calls;
+    failure = error instanceof Error ? error.message : "No se pudo leer el documento.";
+  } finally {
+    if (reservation) {
+      if (consumed > 0) await supabase.rpc("settle_ai_read", { p_reservation: reservation, p_units: consumed });
+      else await supabase.rpc("release_ai_read", { p_reservation: reservation });
+    }
+  }
+  if (failure) {
     await supabase.from("import_jobs").update({ status: "fallido" }).eq("id", id);
-    fail("/admin/importar", message);
+    fail("/admin/importar", failure);
   }
   redirect(`/admin/importar/${id}`);
 }
