@@ -129,7 +129,13 @@ grant execute on function match_catalog_lines(uuid, jsonb) to authenticated;
 grant execute on function add_products_from_master(uuid, jsonb) to authenticated;
 grant execute on function confirm_catalog_import(uuid, jsonb) to authenticated;
 grant execute on function ai_daily_limit(uuid), ai_reads_today(uuid) to authenticated;
-grant execute on function reserve_ai_read(uuid, int), settle_ai_read(uuid, int), release_ai_read(uuid) to authenticated;
+grant execute on function reserve_ai_read(uuid, int) to authenticated;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function settle_ai_read(uuid, int), release_ai_read(uuid) to service_role;
+  end if;
+end $$;
 grant execute on function platform_ai_usage() to authenticated;
 grant execute on function strip_import_costs() to authenticated;
 

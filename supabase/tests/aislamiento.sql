@@ -1253,7 +1253,29 @@ begin
   if v_first is null or v_second is null then
     raise exception 'FALLO: una reserva dentro del límite no se creó';
   end if;
-  insert into ai_probe values (v_first);
+  insert into ai_probe values (v_first), (v_second);
+  begin
+    perform settle_ai_read(v_first, 1);
+    raise exception 'FALLO: un miembro liquidó una reserva';
+  exception
+    when insufficient_privilege then null;
+    when others then
+      if sqlerrm like 'FALLO:%' then raise; end if;
+      if sqlerrm not like '%permission denied%' then
+        raise exception 'FALLO inesperado al liquidar como miembro: %', sqlerrm;
+      end if;
+  end;
+  begin
+    perform release_ai_read(v_first);
+    raise exception 'FALLO: un miembro liberó una reserva';
+  exception
+    when insufficient_privilege then null;
+    when others then
+      if sqlerrm like 'FALLO:%' then raise; end if;
+      if sqlerrm not like '%permission denied%' then
+        raise exception 'FALLO inesperado al liberar como miembro: %', sqlerrm;
+      end if;
+  end;
   begin
     perform reserve_ai_read('11111111-1111-1111-1111-111111111111', 1);
     raise exception 'FALLO: la tercera reserva pasó el límite';
@@ -1278,69 +1300,52 @@ begin
 end $$;
 
 reset role;
-select set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2', true);
-set local role authenticated;
 
 do $$
 declare
   v_id uuid;
 begin
-  select id into v_id from ai_probe;
-  begin
-    perform settle_ai_read(v_id, 1);
-    raise exception 'FALLO: el negocio B liquidó una reserva de A';
-  exception
-    when others then
-      if sqlerrm like 'FALLO:%' then raise; end if;
-      if sqlerrm not like '%No autorizado%' then
-        raise exception 'FALLO inesperado al liquidar otra reserva: %', sqlerrm;
-      end if;
-  end;
-  begin
+  for v_id in select id from ai_probe loop
     perform release_ai_read(v_id);
-    raise exception 'FALLO: el negocio B liberó una reserva de A';
-  exception
-    when others then
-      if sqlerrm like 'FALLO:%' then raise; end if;
-      if sqlerrm not like '%No autorizado%' then
-        raise exception 'FALLO inesperado al liberar otra reserva: %', sqlerrm;
-      end if;
-  end;
-end $$;
-
-reset role;
-select set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', true);
-set local role authenticated;
-
-do $$
-declare
-  v_id uuid;
-  v_units int;
-begin
-  select id into v_id from ai_probe;
+  end loop;
+  select id into v_id from ai_probe limit 1;
   perform settle_ai_read(v_id, 1);
-  select units into v_units from ai_usage where id = v_id;
-  if v_units <> 1 then raise exception 'FALLO: la liquidación no guardó las unidades reales'; end if;
-  begin
-    perform release_ai_read(v_id);
-    raise exception 'FALLO: se liberó una lectura ya registrada';
-  exception
-    when others then
-      if sqlerrm like 'FALLO:%' then raise; end if;
-      if sqlerrm not like '%No autorizado%' then
-        raise exception 'FALLO inesperado al bajar el uso: %', sqlerrm;
-      end if;
-  end;
   begin
     perform settle_ai_read(v_id, 1);
     raise exception 'FALLO: se volvió a liquidar una lectura ya registrada';
   exception
     when others then
       if sqlerrm like 'FALLO:%' then raise; end if;
-      if sqlerrm not like '%ya no está vigente%' then
+      if sqlerrm not like '%ya quedó registrada%' then
         raise exception 'FALLO inesperado al repetir la liquidación: %', sqlerrm;
       end if;
   end;
+end $$;
+
+select set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', true);
+set local role authenticated;
+
+do $$
+declare
+  n int;
+  v_extra uuid;
+begin
+  v_extra := reserve_ai_read('11111111-1111-1111-1111-111111111111', 1);
+  if v_extra is null then raise exception 'FALLO: liberar la reserva no devolvió el cupo'; end if;
+  begin
+    perform reserve_ai_read('11111111-1111-1111-1111-111111111111', 1);
+    raise exception 'FALLO: una reserva liberada y luego liquidada no contó en el límite';
+  exception
+    when others then
+      if sqlerrm like 'FALLO:%' then raise; end if;
+      if sqlerrm not like '%límite de lecturas con IA de hoy%' then
+        raise exception 'FALLO inesperado al contar la liquidación: %', sqlerrm;
+      end if;
+  end;
+  select count(*) into n from ai_usage
+  where business_id = '11111111-1111-1111-1111-111111111111'
+    and status <> 'confirmada';
+  if n <> 0 then raise exception 'FALLO: un miembro vio una reserva pendiente'; end if;
 end $$;
 
 do $$ begin raise notice 'AISLAMIENTO_OK'; end $$;

@@ -3,6 +3,7 @@
 import { refresh, updateTag } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
+import { createAdminSupabase } from "@/lib/supabase/admin";
 import { AiCallError, aiConfigured, extractPriceLines } from "@/lib/ai/client";
 import { applyColumnMap, parseCsv, parseXlsx } from "@/lib/import/csv";
 import { detectImport } from "@/lib/import/files";
@@ -16,6 +17,20 @@ function text(value: FormDataEntryValue | null) {
 
 function fail(path: string, message: string): never {
   redirect(`${path}?error=${encodeURIComponent(message)}`);
+}
+
+async function closeReservation(reservation: string, units: number) {
+  const { business } = await requireAdmin();
+  const admin = createAdminSupabase();
+  const { data, error } = await admin.from("ai_usage").select("business_id").eq("id", reservation).maybeSingle();
+  if (error || data?.business_id !== business.id) {
+    throw new Error("No encontramos esa reserva.");
+  }
+  const result =
+    units > 0
+      ? await admin.rpc("settle_ai_read", { p_reservation: reservation, p_units: units })
+      : await admin.rpc("release_ai_read", { p_reservation: reservation });
+  if (result.error) throw new Error(result.error.message.replace(/^ERROR:\s*/i, ""));
 }
 
 async function shop() {
@@ -147,14 +162,13 @@ export async function startImport(formData: FormData) {
   let failure: string | null = null;
   try {
     const reserved = await supabase.rpc("reserve_ai_read", { p_business_id: business.id, p_units: 2 });
-    if (reserved.error || !reserved.data) {
+    if (reserved.error || typeof reserved.data !== "string") {
       throw new Error(reserved.error?.message.replace(/^ERROR:\s*/i, "") || "Llegaste al límite de lecturas con IA de hoy.");
     }
     reservation = reserved.data;
     const extracted = await extractPriceLines({ bytes, mime: detected.mime });
     consumed = extracted.calls;
-    const settled = await supabase.rpc("settle_ai_read", { p_reservation: reservation, p_units: consumed });
-    if (settled.error) throw new Error(settled.error.message.replace(/^ERROR:\s*/i, ""));
+    await closeReservation(reserved.data, consumed);
     reservation = null;
     const lineas = await enrich(
       supabase,
@@ -169,10 +183,7 @@ export async function startImport(formData: FormData) {
     if (error instanceof AiCallError) consumed = error.calls;
     failure = error instanceof Error ? error.message : "No se pudo leer el documento.";
   } finally {
-    if (reservation) {
-      if (consumed > 0) await supabase.rpc("settle_ai_read", { p_reservation: reservation, p_units: consumed });
-      else await supabase.rpc("release_ai_read", { p_reservation: reservation });
-    }
+    if (reservation) await closeReservation(reservation, consumed);
   }
   if (failure) {
     await supabase.from("import_jobs").update({ status: "fallido" }).eq("id", id);

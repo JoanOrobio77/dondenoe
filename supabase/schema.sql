@@ -2,7 +2,7 @@
 -- Instalación nueva, en este orden: schema.sql, grants.sql, seed.sql.
 -- Si la base ya existe, no corras este archivo.
 -- Una tienda de un solo negocio: 005, luego 006, 007, 008 y 009.
--- Una base que ya tiene 009: solo migrations/010_correcciones_importacion.sql.
+-- Una base que ya tiene 010: solo migrations/011_limite_ia.sql.
 -- pg_trgm: si CREATE EXTENSION falla en Supabase, actívala en Database → Extensions.
 
 create extension if not exists pgcrypto;
@@ -2067,7 +2067,6 @@ language plpgsql security definer set search_path = public as $$
 declare
   v_business uuid;
   v_status text;
-  v_created timestamptz;
   v_units int;
   v_today date;
   v_used int;
@@ -2075,14 +2074,14 @@ begin
   if p_units is null or p_units < 1 or p_units > 5 then
     raise exception 'No se pudo registrar la lectura';
   end if;
-  select business_id, status, created_at, units, used_on
-    into v_business, v_status, v_created, v_units, v_today
+  select business_id, status, units, used_on
+    into v_business, v_status, v_units, v_today
   from ai_usage where id = p_reservation for update;
-  if v_business is null or not public.is_member(v_business) then
+  if v_business is null then
     raise exception 'No autorizado';
   end if;
-  if v_status <> 'reservada' or v_created <= now() - interval '15 minutes' then
-    raise exception 'Esa reserva ya no está vigente';
+  if v_status = 'confirmada' then
+    raise exception 'Esa lectura ya quedó registrada';
   end if;
   if p_units > v_units then
     perform pg_advisory_xact_lock(hashtextextended('ai-read:' || v_business::text, 0));
@@ -2110,7 +2109,7 @@ declare
 begin
   select business_id, status into v_business, v_status
   from ai_usage where id = p_reservation for update;
-  if v_business is null or not public.is_member(v_business) then
+  if v_business is null then
     raise exception 'No autorizado';
   end if;
   if v_status = 'confirmada' then
@@ -2190,7 +2189,7 @@ create policy "miembros editan importaciones" on import_jobs for update to authe
   using (is_member(business_id)) with check (is_member(business_id));
 
 create policy "miembros leen uso de IA" on ai_usage for select to authenticated
-  using (is_member(business_id) or is_platform_admin());
+  using ((is_member(business_id) or is_platform_admin()) and status = 'confirmada');
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
