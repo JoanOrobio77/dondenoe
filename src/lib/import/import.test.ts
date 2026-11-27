@@ -61,20 +61,47 @@ test("tres facturas ficticias se leen con sus columnas", () => {
   assert.equal(hielo?.cantidad, 5);
 });
 
+function workbook(rows: (string | number)[][]) {
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "Lista");
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["oculto"]]), "Otra");
+  return new Uint8Array(XLSX.write(book, { type: "buffer", bookType: "xlsx" }));
+}
+
 test("un excel ficticio se distingue de un csv y se lee", () => {
-  const sheet = XLSX.utils.aoa_to_sheet([
+  const bytes = workbook([
     ["nombre", "presentacion", "costo"],
     ["Corona", "botella 355 ml", "4500"],
   ]);
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, "Lista");
-  const bytes = new Uint8Array(XLSX.write(book, { type: "buffer", bookType: "xlsx" }));
   const detected = detectImport(bytes, "lista.xlsx");
   assert.equal("kind" in detected && detected.kind, "xlsx");
   assert.equal(parseXlsx(bytes)[1]?.[0], "Corona");
   const csv = detectImport(Buffer.from(facturaRon), "factura.csv");
   assert.equal("kind" in csv && csv.kind, "csv");
   assert.equal("error" in detectImport(Buffer.from("%PDF-1.4\n/Type /Page\n".repeat(6)), "largo.pdf"), true);
+});
+
+test("un excel largo se corta en 200 filas y las fórmulas entregan el valor", () => {
+  const rows: (string | number)[][] = [["nombre", "precio"]];
+  for (let index = 1; index <= 250; index += 1) rows.push([`Producto ${index}`, index * 100]);
+  const limited = parseXlsx(workbook(rows));
+  assert.equal(limited.length, 200);
+  assert.equal(limited[1]?.[0], "Producto 1");
+  assert.equal(limited.at(-1)?.[0], "Producto 199");
+
+  const formulaSheet = XLSX.utils.aoa_to_sheet([
+    ["nombre", "precio"],
+    ["Ginger", 4500],
+  ]);
+  formulaSheet.B2 = { t: "n", v: 4500, f: "4000+500" };
+  const formulaBook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(formulaBook, formulaSheet, "Lista");
+  const withFormula = new Uint8Array(XLSX.write(formulaBook, { type: "buffer", bookType: "xlsx" }));
+  const parsed = parseXlsx(withFormula);
+  assert.equal(parsed[1]?.[0], "Ginger");
+  assert.equal(parsed[1]?.[1], "4500");
+  assert.equal(parsed[1]?.join(" ").includes("4000+500"), false);
 });
 
 test("la respuesta simulada de la IA se valida y un JSON malo se reintenta una vez", async () => {

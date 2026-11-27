@@ -36,21 +36,32 @@ export function parseCsv(text: string) {
 }
 
 export function parseXlsx(bytes: Uint8Array) {
-  const book = XLSX.read(bytes, {
-    type: "array",
-    cellFormula: false,
-    cellHTML: false,
-    cellNF: false,
-    cellStyles: false,
-  });
-  const name = book.SheetNames[0];
-  if (!name) return [];
-  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(book.Sheets[name], {
-    header: 1,
-    raw: false,
-    defval: "",
-  });
-  return rows.slice(0, MAX_IMPORT_ROWS + 1).map((row) => row.map((cell) => String(cell ?? "").trim()));
+  try {
+    const book = XLSX.read(bytes, {
+      type: "array",
+      sheets: 0,
+      sheetRows: MAX_IMPORT_ROWS,
+      cellFormula: false,
+      cellHTML: false,
+      cellNF: false,
+      cellStyles: false,
+      cellDates: false,
+      bookVBA: false,
+      bookDeps: false,
+      bookFiles: false,
+    });
+    const name = book.SheetNames[0];
+    if (!name) return [];
+    const rows = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(book.Sheets[name], {
+      header: 1,
+      raw: false,
+      defval: "",
+    });
+    return rows.slice(0, MAX_IMPORT_ROWS).map((row) => row.map((cell) => String(cell ?? "").trim()));
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("No se pudo leer")) throw error;
+    throw new Error("No se pudo leer el Excel. Revisa que sea un archivo válido.");
+  }
 }
 
 export function applyColumnMap(

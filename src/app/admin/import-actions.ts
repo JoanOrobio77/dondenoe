@@ -140,7 +140,14 @@ export async function startImport(formData: FormData) {
   const margin = settings?.sale_margin_percent ?? 30;
 
   if (detected.kind === "csv" || detected.kind === "xlsx") {
-    const rows = detected.kind === "csv" ? parseCsv(Buffer.from(bytes).toString("utf8")) : parseXlsx(bytes);
+    let rows: string[][];
+    try {
+      rows = detected.kind === "csv" ? parseCsv(Buffer.from(bytes).toString("utf8")) : parseXlsx(bytes);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo leer el archivo.";
+      await supabase.from("import_jobs").update({ status: "fallido" }).eq("id", id);
+      fail("/admin/importar", message);
+    }
     await supabase.from("import_jobs").update({ result: { headers: rows[0] ?? [], rows: rows.slice(0, 8), all: rows } }).eq("id", id);
     redirect(`/admin/importar/${id}`);
   }
