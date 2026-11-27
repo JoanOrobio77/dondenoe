@@ -97,7 +97,6 @@ export async function startImport(formData: FormData) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const detected = detectImport(bytes, file.name);
   if ("error" in detected) fail("/admin/importar", detected.error);
-  await supabase.rpc("purge_expired_imports");
 
   if ((detected.kind === "image" || detected.kind === "pdf") && !aiConfigured()) {
     fail("/admin/importar", "La lectura con IA no está configurada. Puedes importar un Excel o un CSV.");

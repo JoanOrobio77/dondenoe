@@ -1,8 +1,8 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
-// Solo para invitar, buscar o borrar usuarios de Auth.
-// La clave de servicio no se usa para leer ni escribir las tablas del negocio.
+// Invitar usuarios de Auth y borrar archivos viejos de importación.
+// La clave de servicio no se importa en componentes del cliente.
 export function createAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

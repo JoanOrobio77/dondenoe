@@ -127,7 +127,6 @@ grant execute on function add_products_from_master(uuid, jsonb) to authenticated
 grant execute on function confirm_catalog_import(uuid, jsonb) to authenticated;
 grant execute on function ai_daily_limit(uuid), ai_reads_today(uuid), record_ai_usage(uuid, int) to authenticated;
 grant execute on function platform_ai_usage() to authenticated;
-grant execute on function purge_expired_imports() to authenticated;
 grant execute on function strip_import_costs() to authenticated;
 
 grant select on storage.objects to anon, authenticated;

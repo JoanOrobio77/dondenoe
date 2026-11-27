@@ -2055,13 +2055,9 @@ $$;
 create function purge_expired_imports() returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  delete from storage.objects
-  where bucket_id = 'imports'
-    and created_at < now() - interval '7 days';
-  update import_jobs
-  set file_path = null
-  where created_at < now() - interval '7 days'
-    and file_path is not null;
+  -- El archivo vive en Storage. Lo borra /api/cron/purgar-importaciones con la API,
+  -- y solo entonces deja file_path en null. Esta función no toca storage.objects.
+  raise exception 'Los archivos de importación se borran desde la tarea programada';
 end $$;
 
 create function strip_import_costs() returns trigger
